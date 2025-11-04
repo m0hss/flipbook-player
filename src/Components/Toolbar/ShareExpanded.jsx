@@ -49,7 +49,7 @@ const ShareExpanded = ({ shareUrl, isOpen, onClose, parentRef }) => {
     return (
         <div
             ref={containerRef}
-            className="absolute top-full mt-2 right-0 left-0 rounded-xl border border-white/10 bg-gray-800 p-2 shadow-lg flex flex-col items-start gap-1 z-50 min-w-40"
+            className="absolute top-full mt-2 right-0 left-0 rounded-xl border border-white/10 bg-gray-800 p-2 shadow-lg flex flex-col items-start gap-2 z-50 min-w-40"
         >
             {/* Copy link */}
             <button
