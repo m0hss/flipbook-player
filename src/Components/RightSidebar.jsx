@@ -32,6 +32,7 @@ const RightSidebar = () => {
   const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
   const [lastScrollY, setLastScrollY] = useState(0);
+  const HIDE_SCROLL_THRESHOLD = 10; // hide earlier than before (was 50)
 
   const isActive = (path) => {
     return location.pathname === path;
@@ -52,14 +53,15 @@ const RightSidebar = () => {
   useEffect(() => {
     const handleScroll = () => {
       const currentScrollY = window.scrollY;
-      
-      // Show when scrolling up, hide when scrolling down
-      if (currentScrollY > lastScrollY && currentScrollY > 50) {
+      const scrollingDown = currentScrollY > lastScrollY;
+
+      // Show when scrolling up, hide when scrolling down; use lower threshold to hide earlier
+      if (scrollingDown && currentScrollY > HIDE_SCROLL_THRESHOLD) {
         setIsVisible(false);
       } else {
         setIsVisible(true);
       }
-      
+
       setLastScrollY(currentScrollY);
     };
 
@@ -70,7 +72,7 @@ const RightSidebar = () => {
   return (
     <>
       <button
-        className={`fixed z-50 top-5 right-6 flex flex-col items-end justify-start text-3xl rounded-full p-3 bg-white text-black transition-transform duration-300 ${
+        className={`fixed z-50 top-4 right-6 flex flex-col items-end justify-start text-3xl rounded-full p-3 bg-white text-black transition-transform duration-300 ${
           isVisible ? 'translate-y-0' : '-translate-y-24'
         }`}
         onClick={toggleMobileMenu}

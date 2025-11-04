@@ -212,22 +212,24 @@ function FlipBook() {
           </div>
         )}
       </Document>
-          {/* Toolbar placed under the document */}
-          <div className="w-full lg:w-3/4 mt-4">
-            <Toolbar
-              flipbookRef={flipbookRef}
-              containerRef={containerRef}
-              screenfull={screenfull}
-              pdfDetails={{ totalPages: numPages ?? 0 }}
-              viewerStates={{ currentPageIndex }}
-              pdfDocument={pdfDocument}
-              // Zoom controls
-              zoomLevel={zoomLevel}
-              onZoomIn={handleZoomIn}
-              onZoomOut={handleZoomOut}
-              onResetZoom={handleResetZoom}
-            />
-          </div>
+          {/* Toolbar placed under the document - hidden until document is loaded */}
+          {numPages ? (
+            <div className="w-full lg:w-3/4 mt-4">
+              <Toolbar
+                flipbookRef={flipbookRef}
+                containerRef={containerRef}
+                screenfull={screenfull}
+                pdfDetails={{ totalPages: numPages ?? 0 }}
+                viewerStates={{ currentPageIndex }}
+                pdfDocument={pdfDocument}
+                // Zoom controls
+                zoomLevel={zoomLevel}
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onResetZoom={handleResetZoom}
+              />
+            </div>
+          ) : null}
         </div>
 
         {/* Mobile library at bottom */}
