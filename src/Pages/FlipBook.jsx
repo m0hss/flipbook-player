@@ -16,33 +16,18 @@ pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
 const PageContent = React.forwardRef(({ pageNumber, width }, ref) => {
   const [isPageLoading, setIsPageLoading] = React.useState(true);
-  const loadStartRef = React.useRef(Date.now());
-  const timeoutRef = React.useRef(null);
 
   // Reset loading state whenever the page number changes
   React.useEffect(() => {
     setIsPageLoading(true);
-    loadStartRef.current = Date.now();
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
+      // no-op cleanup; ensure no lingering timers (none are used now)
     };
   }, [pageNumber]);
 
+  // As soon as the page renders successfully, hide the loader immediately (no artificial delay)
   const handleRenderSuccess = React.useCallback(() => {
-    const elapsed = Date.now() - loadStartRef.current;
-    const remaining = Math.max(0, 300 - elapsed);
-    if (remaining === 0) {
-      setIsPageLoading(false);
-    } else {
-      timeoutRef.current = setTimeout(() => setIsPageLoading(false), remaining);
-    }
+    setIsPageLoading(false);
   }, []);
 
   return (

@@ -78,7 +78,7 @@ const Toolbar = ({
   );
 
   return (
-    <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-md overflow-visible">
+    <div className="w-full rounded-xl border border-white/10 bg-white/5 backdrop-blur-md overflow-visible relative z-30">
       <div className="px-2 sm:px-3 py-2">
         <SliderNav
           flipbookRef={flipbookRef}
