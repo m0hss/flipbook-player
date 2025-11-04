@@ -3,14 +3,14 @@
 
 export const pdfLibrary = [
   {
-    id: 'py-scripting',
-    title: 'Python Scripting',
-    file: '/py-scripting.pdf',
+    id: 'Portefeuille',
+    title: 'Portefeuille',
+    file: '/Portefeuille.pdf',
   },
   {
-    id: 'reverse-engineering',
-    title: 'Reverse Engineering',
-    file: '/Reverse Engineering.pdf',
+    id: 'Certificats',
+    title: 'Certificats',
+    file: '/Certificats.pdf',
   },
 ];
 

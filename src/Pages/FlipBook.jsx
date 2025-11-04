@@ -58,8 +58,14 @@ function FlipBook() {
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentFile, setCurrentFile] = useState(pdfLibrary?.[0]?.file || '/py-scripting.pdf');
   const [zoomLevel, setZoomLevel] = useState(1);
+  // Pan state for dragging when zoomed in
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   // Track if we've completed at least one successful load (for initial gating of library)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  // PDF page aspect ratio (width / height) for proper fit within flipbook page
+  const [pdfAspect, setPdfAspect] = useState(null);
   
   const flipbookRef = useRef(null);
   const containerRef = useRef(null);
@@ -75,7 +81,7 @@ function FlipBook() {
     if (width < 640) {
       // Mobile — enforce single page sizing (portrait)
       const pageWidth = Math.max(280, Math.min(width - 32, 420)); // keep within safe bounds
-      const pageHeight = Math.round(pageWidth * 1.2); // A-series aspect ratio (~√2)
+      const pageHeight = Math.round(pageWidth * 1.4); // A-series aspect ratio (~√2)
       const maxPageHeight = Math.max(360, height - 160); // leave space for header/controls
       setDimensions({ width: pageWidth, height: Math.min(pageHeight, maxPageHeight) });
     } else if (width < 768) {
@@ -86,7 +92,7 @@ function FlipBook() {
       setDimensions({ width: 360, height: 480 });
     } else {
       // Desktop — double page
-      setDimensions({ width: 420, height: 500 }); // landscape-ish to prefer spread
+      setDimensions({ width: 420, height: 600 }); // landscape-ish to prefer spread
     }
   }, [screenWidth, screenHeight]);
 
@@ -101,6 +107,18 @@ function FlipBook() {
       setZoomLevel(1);
       // mark the initial load complete so library can remain visible on later loads
       setHasLoadedOnce(true);
+      // Read first page to detect intrinsic aspect ratio (width/height)
+      pdf.getPage(1)
+        .then((page) => {
+          const vp = page.getViewport({ scale: 1 });
+          // Avoid zero division
+          if (vp && vp.height) {
+            setPdfAspect(vp.width / vp.height);
+          } else {
+            setPdfAspect(null);
+          }
+        })
+        .catch(() => setPdfAspect(null));
     } catch {
       // ignore
     }
@@ -142,7 +160,15 @@ function FlipBook() {
 
   const handleResetZoom = useCallback(() => {
     setZoomLevel(1);
+    setPan({ x: 0, y: 0 });
   }, []);
+
+  // Ensure pan resets whenever zoom returns to base level
+  useEffect(() => {
+    if (zoomLevel <= 1 && (pan.x !== 0 || pan.y !== 0)) {
+      setPan({ x: 0, y: 0 });
+    }
+  }, [zoomLevel, pan.x, pan.y]);
 
   return (
     <div ref={containerRef} className="bg-gray-900 min-h-screen w-full px-2 sm:px-4 py-6 sm:py-8 overflow-x-hidden">
@@ -166,54 +192,109 @@ function FlipBook() {
       >
         {numPages && (
           <div className="flex flex-col items-center gap-4 w-full">
-            {/* Zoomable viewport wrapper */}
-            <div className="w-full overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
-              <div
-                style={{
-                  margin: '0 auto',
-                  transform: `scale(${zoomLevel})`,
-                  transformOrigin: 'top center',
-                  willChange: 'transform',
-                  // Keep base dimensions so scaling works predictably
-                  width: isMobile ? dimensions.width : dimensions.width * 2,
-                }}
-              >
-                <HTMLFlipBook 
-                  ref={flipbookRef}
-                  width={dimensions.width} 
-                  height={dimensions.height}
-                  size="fixed"
-                  minWidth={280}
-                  maxWidth={600}
-                  minHeight={350}
-                  maxHeight={900}
-                  showCover={true}
-                  drawShadow={true}
-                  flippingTime={600}
-                  // On mobile, force single-page mode; on larger screens, let spreads show
-                  usePortrait={isMobile}
-                  startPage={0}
-                  maxShadowOpacity={0.5}
-                  mobileScrollSupport={true}
-                  className="flipbook"
-                  onFlip={() => {
-                    try {
-                      const idx = flipbookRef.current?.pageFlip()?.getCurrentPageIndex?.();
-                      if (typeof idx === 'number') setCurrentPageIndex(idx);
-                    } catch {
-                      // ignore
-                    }
-                  }}
-                >
-                  {Array.from(new Array(numPages), (el, index) => (
-                    <PageContent 
-                      key={`page_${index + 1}`} 
-                      pageNumber={index + 1}
-                      width={dimensions.width}
-                    />
-                  ))}
-                </HTMLFlipBook>
-              </div>
+            {/* Zoomable viewport wrapper with drag-to-pan when zoomed */}
+            <div className="w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
+              {(() => {
+                // Compute a per-page width that guarantees the PDF fits within flipbook page width/height
+                // If we know the aspect ratio (w/h), limit by both dimensions; otherwise fallback to width
+                const targetByHeight = pdfAspect ? Math.floor(dimensions.height * pdfAspect) : dimensions.width;
+                const pageWidthFit = Math.min(dimensions.width, targetByHeight);
+                const bookWidth = pageWidthFit; // each page width
+                const wrapperWidth = isMobile ? bookWidth : bookWidth * 2; // two pages on desktop
+                // Pointer handlers for panning when zoomed
+                const handlePointerDown = (e) => {
+                  if (zoomLevel <= 1) return;
+                  // Prevent flip action and text selection
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
+                  setIsPanning(true);
+                  panStartRef.current = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    panX: pan.x,
+                    panY: pan.y,
+                  };
+                };
+                const handlePointerMove = (e) => {
+                  if (!isPanning || zoomLevel <= 1) return;
+                  const dx = e.clientX - panStartRef.current.x;
+                  const dy = e.clientY - panStartRef.current.y;
+                  setPan({
+                    x: panStartRef.current.panX + dx,
+                    y: panStartRef.current.panY + dy,
+                  });
+                };
+                const endPan = (e) => {
+                  if (!isPanning) return;
+                  try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+                  setIsPanning(false);
+                };
+                return (
+                  <div
+                    style={{
+                      width: wrapperWidth,
+                      height: dimensions.height,
+                      margin: '0 auto',
+                      overflow: 'hidden',
+                      cursor: zoomLevel > 1 ? 'move' : 'default',
+                      touchAction: zoomLevel > 1 ? 'none' : 'auto',
+                      userSelect: isPanning ? 'none' : 'auto',
+                    }}
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={endPan}
+                    onPointerLeave={endPan}
+                  >
+                    <div
+                      style={{
+                        margin: '0 auto',
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
+                        transformOrigin: 'top center',
+                        willChange: 'transform',
+                        // Keep base dimensions so scaling works predictably
+                        width: wrapperWidth,
+                      }}
+                    >
+                      <HTMLFlipBook 
+                        ref={flipbookRef}
+                        width={bookWidth} 
+                        height={dimensions.height}
+                        size="fixed"
+                        minWidth={280}
+                        maxWidth={600}
+                        minHeight={350}
+                        maxHeight={900}
+                        showCover={true}
+                        drawShadow={true}
+                        flippingTime={600}
+                        // On mobile, force single-page mode; on larger screens, let spreads show
+                        usePortrait={isMobile}
+                        startPage={0}
+                        maxShadowOpacity={0.5}
+                        mobileScrollSupport={true}
+                        className="flipbook"
+                        onFlip={() => {
+                          try {
+                            const idx = flipbookRef.current?.pageFlip()?.getCurrentPageIndex?.();
+                            if (typeof idx === 'number') setCurrentPageIndex(idx);
+                          } catch {
+                            // ignore
+                          }
+                        }}
+                      >
+                        {Array.from(new Array(numPages), (el, index) => (
+                          <PageContent 
+                            key={`page_${index + 1}`} 
+                            pageNumber={index + 1}
+                            width={bookWidth}
+                          />
+                        ))}
+                      </HTMLFlipBook>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
