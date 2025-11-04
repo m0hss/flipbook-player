@@ -16,6 +16,8 @@ const Toolbar = ({
   onZoomIn,
   onZoomOut,
   onResetZoom,
+  // Notify parent when fullscreen changes
+  onFullscreenChange,
 }) => {
   const { width: screenWidth } = useScreenSize();
   const [shareExpanded, setShareExpanded] = useState(false);
@@ -24,13 +26,38 @@ const Toolbar = ({
 
   // Full screen >>>>>>>>>
   const fullScreen = useCallback(() => {
-    if (screenfull.isEnabled) {
+    if (screenfull?.isEnabled) {
       screenfull.toggle(containerRef.current, { navigationUI: "hide" });
     }
-    screenfull.on("error", (event) => {
-      alert("Failed to enable fullscreen", event);
-    });
   }, [screenfull, containerRef]);
+
+  // Keep parent's fullscreen state in sync and handle errors once
+  useEffect(() => {
+    if (!screenfull?.isEnabled) return;
+    const handleChange = () => {
+      try {
+        onFullscreenChange?.(!!screenfull.isFullscreen);
+      } catch {
+        // ignore
+      }
+    };
+    const handleError = () => {
+      // Minimal alert; avoid multiple registrations
+      alert("Failed to enable fullscreen");
+      // Keep state consistent
+      onFullscreenChange?.(false);
+    };
+    screenfull.on("change", handleChange);
+    screenfull.on("error", handleError);
+    return () => {
+      try {
+        screenfull.off?.("change", handleChange);
+        screenfull.off?.("error", handleError);
+      } catch {
+        // ignore
+      }
+    };
+  }, [screenfull, onFullscreenChange]);
 
   // Zoom handlers (delegated) >>>>>>>>
   const handleZoomIn = useCallback(() => {
@@ -67,7 +94,7 @@ const Toolbar = ({
   const btnBase = useMemo(
     () =>
       [
-        "h-8 w-8 sm:h-8 sm:w-9 min-w-9 sm:min-w-9",
+        "h-8 w-9 min-w-9 min-w-9",
         "rounded-lg flex items-center justify-center",
         "text-white/80 hover:text-white",
         "bg-transparent hover:bg-white/10",
@@ -103,7 +130,7 @@ const Toolbar = ({
           className={btnBase}
         >
           <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
+            className="w-5 h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -129,7 +156,7 @@ const Toolbar = ({
           className={btnBase}
         >
           <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
+            className="w-5 h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -149,7 +176,7 @@ const Toolbar = ({
           title="Zoom Out"
         >
           <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
+            className="w-5 h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -169,7 +196,7 @@ const Toolbar = ({
           title="Zoom In"
         >
           <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
+            className="w-5 h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -188,7 +215,7 @@ const Toolbar = ({
           title="Refresh"
         >
           <svg
-            className="w-4 h-4 sm:w-5 sm:h-5"
+            className="w-5 h-5"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -208,7 +235,7 @@ const Toolbar = ({
             title="Share"
           >
             <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -233,7 +260,7 @@ const Toolbar = ({
         >
           {screenfull.isEnabled && screenfull.isFullscreen ? (
             <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -247,7 +274,7 @@ const Toolbar = ({
             </svg>
           ) : (
             <svg
-              className="w-4 h-4 sm:w-5 sm:h-5"
+              className="w-5 h-5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

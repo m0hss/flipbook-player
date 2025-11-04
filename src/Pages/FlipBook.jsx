@@ -62,6 +62,8 @@ function FlipBook() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  // Fullscreen UI control
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // Track if we've completed at least one successful load (for initial gating of library)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   // PDF page aspect ratio (width / height) for proper fit within flipbook page
@@ -71,6 +73,16 @@ function FlipBook() {
   const containerRef = useRef(null);
   const { width: screenWidth, height: screenHeight } = useScreenSize();
   const isMobile = screenWidth < 640; // tailwind 'sm' breakpoint
+
+  // Listen to fullscreen state
+  useEffect(() => {
+    if (!screenfull?.isEnabled) return;
+    const handler = () => setIsFullscreen(!!screenfull.isFullscreen);
+    screenfull.on('change', handler);
+    return () => {
+      try { screenfull.off('change', handler); } catch { /* noop */ }
+    };
+  }, []);
 
   // Set responsive dimensions based on screen size
   useEffect(() => {
@@ -171,8 +183,20 @@ function FlipBook() {
   }, [zoomLevel, pan.x, pan.y]);
 
   return (
-    <div ref={containerRef} className="bg-gray-900 min-h-screen w-full px-2 sm:px-4 py-6 sm:py-8 overflow-x-hidden">
-      <div className="max-w-7xl mx-auto w-full flex flex-col sm:flex-row gap-4 sm:gap-6">
+    <div
+      ref={containerRef}
+      className={[
+        'bg-gray-900 min-h-screen w-full',
+        isFullscreen ? 'px-0 py-0 overflow-hidden' : 'px-2 sm:px-4 py-6 sm:py-8 overflow-x-hidden',
+      ].join(' ')}
+    >
+      <div
+        className={[
+          isFullscreen
+            ? 'max-w-none w-full mx-auto flex flex-col gap-2'
+            : 'max-w-7xl mx-auto w-full flex flex-col sm:flex-row gap-4 sm:gap-6',
+        ].join(' ')}
+      >
         {/* Left transparent library - hidden on mobile; also hide during very first load */}
         {hasLoadedOnce ? (
           <div className="hidden sm:block">
@@ -182,7 +206,9 @@ function FlipBook() {
 
         {/* Main viewer area */}
         <div className="flex-1 flex flex-col items-center">
-          <div className="text-3xl sm:text-4xl font-bold md:font-extrabold text-white mb-6 sm:mb-8 self-start">{currentTitle}</div>
+          {!isFullscreen && (
+            <div className="text-3xl sm:text-4xl font-bold md:font-extrabold text-white mb-6 sm:mb-8 self-start">{currentTitle}</div>
+          )}
 
           <Document
         file={currentFile}
@@ -301,7 +327,7 @@ function FlipBook() {
       </Document>
           {/* Toolbar placed under the document - hidden until document is loaded */}
           {numPages ? (
-            <div className="w-full lg:w-3/4 mt-4">
+            <div className={isFullscreen ? 'w-full mt-2' : 'w-full lg:w-3/4 mt-4'}>
               <Toolbar
                 flipbookRef={flipbookRef}
                 containerRef={containerRef}
