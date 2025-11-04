@@ -58,6 +58,8 @@ function FlipBook() {
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentFile, setCurrentFile] = useState(pdfLibrary?.[0]?.file || '/py-scripting.pdf');
   const [zoomLevel, setZoomLevel] = useState(1);
+  // Track if we've completed at least one successful load (for initial gating of library)
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   
   const flipbookRef = useRef(null);
   const containerRef = useRef(null);
@@ -97,6 +99,8 @@ function FlipBook() {
       setCurrentPageIndex(0);
       // reset zoom when a new document loads
       setZoomLevel(1);
+      // mark the initial load complete so library can remain visible on later loads
+      setHasLoadedOnce(true);
     } catch {
       // ignore
     }
@@ -143,10 +147,12 @@ function FlipBook() {
   return (
     <div ref={containerRef} className="bg-gray-900 min-h-screen w-full px-2 sm:px-4 py-6 sm:py-8 overflow-x-hidden">
       <div className="max-w-7xl mx-auto w-full flex flex-col sm:flex-row gap-4 sm:gap-6">
-        {/* Left transparent library - hidden on mobile */}
-        <div className="hidden sm:block">
-          <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
-        </div>
+        {/* Left transparent library - hidden on mobile; also hide during very first load */}
+        {hasLoadedOnce ? (
+          <div className="hidden sm:block">
+            <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
+          </div>
+        ) : null}
 
         {/* Main viewer area */}
         <div className="flex-1 flex flex-col items-center">
@@ -232,10 +238,12 @@ function FlipBook() {
           ) : null}
         </div>
 
-        {/* Mobile library at bottom */}
-        <div className="sm:hidden">
-          <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
-        </div>
+        {/* Mobile library at bottom; also hide during very first load */}
+        {hasLoadedOnce ? (
+          <div className="sm:hidden">
+            <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
