@@ -14,7 +14,7 @@ import pdfLibrary from "../assets/pdfs";
 // Use local worker file to avoid CORS issues
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 
-const PageContent = React.forwardRef(({ pageNumber, width }, ref) => {
+const PageContent = React.forwardRef(({ pageNumber, maxWidth, maxHeight }, ref) => {
   const [isPageLoading, setIsPageLoading] = React.useState(true);
 
   // Reset loading state whenever the page number changes
@@ -31,12 +31,18 @@ const PageContent = React.forwardRef(({ pageNumber, width }, ref) => {
   }, []);
 
   return (
-    <div className="demoPage relative" ref={ref}>
+    <div className="demoPage relative" ref={ref} style={{ 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center',
+      width: maxWidth,
+      height: maxHeight
+    }}>
       <Page
         pageNumber={pageNumber}
         renderAnnotationLayer={false}
         renderTextLayer={false}
-        width={width}
+        height={maxHeight}
         className="pdf-page"
         onRenderSuccess={handleRenderSuccess}
       />
@@ -313,7 +319,8 @@ function FlipBook() {
                           <PageContent 
                             key={`page_${index + 1}`} 
                             pageNumber={index + 1}
-                            width={bookWidth}
+                            maxWidth={bookWidth}
+                            maxHeight={dimensions.height}
                           />
                         ))}
                       </HTMLFlipBook>

@@ -23,6 +23,9 @@ const Toolbar = ({
   const [shareExpanded, setShareExpanded] = useState(false);
   const shareButtonRef = useRef(null);
   const pagesInFlipView = viewerStates.currentPageIndex + 1;
+  // Guard against double-flips (esp. on mobile rapid taps)
+  const [isFlipping, setIsFlipping] = useState(false);
+  const flipTimerRef = useRef(null);
 
   // Full screen >>>>>>>>>
   const fullScreen = useCallback(() => {
@@ -59,6 +62,16 @@ const Toolbar = ({
     };
   }, [screenfull, onFullscreenChange]);
 
+  // Cleanup flip timer on unmount
+  useEffect(() => {
+    return () => {
+      if (flipTimerRef.current) {
+        clearTimeout(flipTimerRef.current);
+        flipTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Zoom handlers (delegated) >>>>>>>>
   const handleZoomIn = useCallback(() => {
     onZoomIn?.();
@@ -79,8 +92,18 @@ const Toolbar = ({
 
   // Keyboard shortcuts >>>>>>>>>
   useEffect(() => {
-    const handleRight = () => flipbookRef.current?.pageFlip()?.flipNext();
-    const handleLeft = () => flipbookRef.current?.pageFlip()?.flipPrev();
+    const handleRight = () => {
+      if (isFlipping) return;
+      setIsFlipping(true);
+      flipbookRef.current?.pageFlip()?.flipNext();
+      flipTimerRef.current = setTimeout(() => setIsFlipping(false), 650);
+    };
+    const handleLeft = () => {
+      if (isFlipping) return;
+      setIsFlipping(true);
+      flipbookRef.current?.pageFlip()?.flipPrev();
+      flipTimerRef.current = setTimeout(() => setIsFlipping(false), 650);
+    };
 
     keyboardjs.bind("right", null, handleRight);
     keyboardjs.bind("left", null, handleLeft);
@@ -89,7 +112,7 @@ const Toolbar = ({
       keyboardjs.unbind("right", null, handleRight);
       keyboardjs.unbind("left", null, handleLeft);
     };
-  }, [flipbookRef, fullScreen]);
+  }, [flipbookRef, fullScreen, isFlipping]);
 
   const btnBase = useMemo(
     () =>
@@ -122,9 +145,11 @@ const Toolbar = ({
 
         <button
           onClick={() => {
-            screenWidth < 768
-              ? flipbookRef.current?.pageFlip()?.turnToPrevPage()
-              : flipbookRef.current?.pageFlip()?.flipPrev();
+            if (isFlipping) return;
+            setIsFlipping(true);
+            // Always flip one page to avoid jumps
+            flipbookRef.current?.pageFlip()?.flipPrev();
+            flipTimerRef.current = setTimeout(() => setIsFlipping(false), 650);
           }}
           disabled={viewerStates.currentPageIndex === 0}
           className={btnBase}
@@ -145,9 +170,11 @@ const Toolbar = ({
         </button>
         <button
           onClick={() => {
-            screenWidth < 768
-              ? flipbookRef.current?.pageFlip()?.turnToNextPage()
-              : flipbookRef.current?.pageFlip()?.flipNext();
+            if (isFlipping) return;
+            setIsFlipping(true);
+            // Always flip one page to avoid jumps
+            flipbookRef.current?.pageFlip()?.flipNext();
+            flipTimerRef.current = setTimeout(() => setIsFlipping(false), 650);
           }}
           disabled={
             viewerStates.currentPageIndex === pdfDetails?.totalPages - 1 ||
