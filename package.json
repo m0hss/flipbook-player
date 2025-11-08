@@ -16,7 +16,7 @@
     "clsx": "^2.1.1",
     "keyboardjs": "^2.7.0",
     "lucide-react": "^0.552.0",
-    "pdfjs-dist": "^5.4.394",
+    "pdfjs-dist": "4.8.69",
     "react": "^19.1.1",
     "react-circular-progressbar": "^2.2.0",
     "react-dom": "^19.1.1",

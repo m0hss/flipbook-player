@@ -1,9 +1,18 @@
-import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+} from "react";
 import HTMLFlipBook from "react-pageflip";
-import { Document, Page, pdfjs } from 'react-pdf';
-import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
-import 'react-pdf/dist/esm/Page/TextLayer.css';
-import PdfLoading from '../Components/PdfLoading';
+import { Document, Page, pdfjs } from "react-pdf";
+// Use the matching pdfjs worker that ships with the installed pdfjs-dist version.
+// Vite will bundle this and give us a URL at build time.
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
+import PdfLoading from "../Components/PdfLoading";
 import Toolbar from "../Components/Toolbar/Toolbar";
 import screenfull from "screenfull";
 import "./styles.css";
@@ -11,58 +20,91 @@ import useScreenSize from "../hooks/useScreenSize";
 import LeftLibrary from "../Components/LeftLibrary";
 import pdfLibrary from "../assets/pdfs";
 
-// Use local worker file to avoid CORS issues
-pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+// Point pdf.js to the correct worker script URL produced by Vite.
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
-const PageContent = React.forwardRef(({ pageNumber, maxWidth, maxHeight }, ref) => {
-  const [isPageLoading, setIsPageLoading] = React.useState(true);
+const PageContent = React.forwardRef(
+  ({ pageNumber, width, height, pageInfo }, ref) => {
+    const [isPageLoading, setIsPageLoading] = React.useState(true);
 
-  // Reset loading state whenever the page number changes
-  React.useEffect(() => {
-    setIsPageLoading(true);
-    return () => {
-      // no-op cleanup; ensure no lingering timers (none are used now)
+    // Reset loading state whenever the page number changes
+    React.useEffect(() => {
+      setIsPageLoading(true);
+      return () => {
+        // no-op cleanup; ensure no lingering timers (none are used now)
+      };
+    }, [pageNumber]);
+
+    // As soon as the page renders successfully, hide the loader immediately (no artificial delay)
+    const handleRenderSuccess = React.useCallback(() => {
+      setIsPageLoading(false);
+    }, []);
+
+    // Calculate the best fit for this specific page within the fixed viewer size
+    const getPageScale = () => {
+      if (!pageInfo) return { width, height };
+
+      const pageAspect = pageInfo.aspectRatio;
+      const viewerAspect = width / height;
+
+      // Fit the page to the viewer while maintaining aspect ratio
+      if (pageAspect > viewerAspect) {
+        // Page is wider relative to viewer - fit by width
+        return { width, height: undefined };
+      } else {
+        // Page is taller relative to viewer - fit by height
+        return { width: undefined, height };
+      }
     };
-  }, [pageNumber]);
 
-  // As soon as the page renders successfully, hide the loader immediately (no artificial delay)
-  const handleRenderSuccess = React.useCallback(() => {
-    setIsPageLoading(false);
-  }, []);
+    const { width: pageWidth, height: pageHeight } = getPageScale();
 
-  return (
-    <div className="demoPage relative" ref={ref} style={{ 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      width: maxWidth,
-      height: maxHeight
-    }}>
-      <Page
-        pageNumber={pageNumber}
-        renderAnnotationLayer={false}
-        renderTextLayer={false}
-        height={maxHeight}
-        className="pdf-page"
-        onRenderSuccess={handleRenderSuccess}
-      />
-      {isPageLoading && (
-        <div className="absolute inset-0 pointer-events-none">
-          <PdfLoading />
-        </div>
-      )}
-    </div>
-  );
-});
+    // Use uniform viewer width/height (passed as props) for the flipbook page container.
+    // Keeping the container size consistent for all pages prevents the flipbook
+    // from reflowing pages into wrong sides when flipping.
+    const containerStyle = {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      width: width ? `${width}px` : "100%",
+      height: height ? `${height}px` : "100%",
+    };
 
-PageContent.displayName = 'PageContent';
+    return (
+      <div
+        className={["demoPage relative", pageInfo?.isLandscape ? "landscape-page" : ""].join(" ")}
+        ref={ref}
+        style={containerStyle}
+      >
+        <Page
+          pageNumber={pageNumber}
+          renderAnnotationLayer={false}
+          renderTextLayer={false}
+          width={pageWidth}
+          height={pageHeight}
+          className="pdf-page"
+          onRenderSuccess={handleRenderSuccess}
+        />
+        {isPageLoading && (
+          <div className="absolute inset-0 pointer-events-none">
+            <PdfLoading />
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+
+PageContent.displayName = "PageContent";
 
 function FlipBook() {
   const [numPages, setNumPages] = useState(null);
   const [dimensions, setDimensions] = useState({ width: 500, height: 700 });
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [pdfDocument, setPdfDocument] = useState(null);
-  const [currentFile, setCurrentFile] = useState(pdfLibrary?.[0]?.file || '/py-scripting.pdf');
+  const [currentFile, setCurrentFile] = useState(
+    pdfLibrary?.[0]?.file || "/py-scripting.pdf"
+  );
   const [zoomLevel, setZoomLevel] = useState(1);
   // Pan state for dragging when zoomed in
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -72,9 +114,11 @@ function FlipBook() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Track if we've completed at least one successful load (for initial gating of library)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  // PDF page aspect ratio (width / height) for proper fit within flipbook page
-  const [pdfAspect, setPdfAspect] = useState(null);
-  
+  // Track if PDF pages are predominantly landscape or portrait
+  const [isLandscapeOriented, setIsLandscapeOriented] = useState(false);
+  // Store dimensions for each individual page
+  const [pageDimensions, setPageDimensions] = useState({});
+
   const flipbookRef = useRef(null);
   const containerRef = useRef(null);
   const { width: screenWidth, height: screenHeight } = useScreenSize();
@@ -84,40 +128,104 @@ function FlipBook() {
   useEffect(() => {
     if (!screenfull?.isEnabled) return;
     const handler = () => setIsFullscreen(!!screenfull.isFullscreen);
-    screenfull.on('change', handler);
+    screenfull.on("change", handler);
     return () => {
-      try { screenfull.off('change', handler); } catch { /* noop */ }
+      try {
+        screenfull.off("change", handler);
+      } catch {
+        /* noop */
+      }
     };
   }, []);
 
-  // Set responsive dimensions based on screen size
+  // Fixed viewer sizes for portrait and landscape pages
+  const viewerSizes = useMemo(() => {
+    const availableWidth = screenWidth || window.innerWidth;
+
+    // Estimate available horizontal space by subtracting the left library (when shown)
+    // and container margins (mx-14 ~= 56px each side).
+    const leftSidebarWidth = hasLoadedOnce ? 256 : 0; // tailwind 'sm:w-64' => 16rem = 256px
+    const containerMargins = 56 * 2; // mx-14 left+right = 56px * 2
+    const safetyGap = 40; // additional padding/gap to avoid touching edges
+    const usableWidth = Math.max(600, availableWidth - leftSidebarWidth - containerMargins - safetyGap);
+
+    if (isMobile) {
+      // Mobile: use a fixed, screen-aware width so landscape pages don't overflow
+      const screenW = screenWidth || window.innerWidth;
+      const mobileBaseWidth = Math.max(280, Math.min(screenW - 32, 350));
+      // Increase mobile heights slightly for better readability on small screens
+      const portraitHeight = Math.round(mobileBaseWidth * (470 / 350) * 1.15); // +15%
+      const landscapeHeight = Math.round(mobileBaseWidth * (200 / 350) * 1.3); // +10%
+
+      return {
+        portrait: { width: mobileBaseWidth, height: portraitHeight },
+        // Keep landscape the same width on mobile but slightly taller height
+        landscape: { width: mobileBaseWidth, height: landscapeHeight },
+      };
+    } else if (availableWidth < 1024) {
+      // Tablet: use a larger fraction of usableWidth but cap it
+      const landscapeWidth = Math.min(Math.floor(usableWidth * 0.9), 900);
+      return {
+        portrait: { width: 400, height: 760 },
+        landscape: { width: landscapeWidth, height: Math.round((420 / 600) * landscapeWidth) },
+      };
+    } else {
+      // Desktop: allow landscape pages to take most of the usable width (split across two pages)
+      // If we show two-page spread, each page can be approximately half of usableWidth.
+      // Compute per-page width as ~90% of half the usable width, capped to avoid extreme sizes.
+      const perPageMax = Math.min(Math.floor((usableWidth / 2) * 0.95), 1400);
+      const landscapeWidth = Math.max(650, perPageMax); // ensure at least previous default
+      const landscapeBaseHeight = 460; // original base height for 850 width
+      const landscapeBaseWidth = 1024;
+      const landscapeHeight = Math.round((landscapeWidth * landscapeBaseHeight) / landscapeBaseWidth);
+
+      return {
+        portrait: { width: 450, height: 600 },
+        landscape: { width: landscapeWidth, height: landscapeHeight },
+      };
+    }
+  }, [screenWidth, isMobile, hasLoadedOnce]);
+
+  // Determine current page dimensions based on whether it's landscape or portrait
+  const currentPageDimensions = useMemo(() => {
+    const pageNum = currentPageIndex + 1;
+    const pageInfo = pageDimensions[pageNum];
+
+    if (!pageInfo) {
+      return dimensions; // fallback to default
+    }
+
+    // Use fixed sizes based on page orientation
+    const selectedSize = pageInfo.isLandscape
+      ? viewerSizes.landscape
+      : viewerSizes.portrait;
+    // debug logging removed
+    return selectedSize;
+  }, [currentPageIndex, pageDimensions, viewerSizes, dimensions]);
+
+  // Set default/fallback dimensions based on screen size - used when page dimensions not yet available
   useEffect(() => {
-    // Responsive dimensions derived from current screen size
     const width = screenWidth || window.innerWidth;
     const height = screenHeight || window.innerHeight;
 
+    // Simple fallback dimensions
     if (width < 640) {
-      // Mobile — enforce single page sizing (portrait)
-      const pageWidth = Math.max(280, Math.min(width - 32, 420)); // keep within safe bounds
-      const pageHeight = Math.round(pageWidth * 1.4); // A-series aspect ratio (~√2)
-      const maxPageHeight = Math.max(360, height - 160); // leave space for header/controls
-      setDimensions({ width: pageWidth, height: Math.min(pageHeight, maxPageHeight) });
-    } else if (width < 768) {
-      // Small tablets — single page
-      setDimensions({ width: 420, height: 594 });
-    } else if (width < 1024) {
-      // Large tablets — allow double page
-      setDimensions({ width: 360, height: 480 });
+      const pageWidth = Math.max(280, Math.min(width - 32, 420));
+      const pageHeight = Math.round(pageWidth * 1.4);
+      const maxPageHeight = Math.max(360, height - 160);
+      setDimensions({
+        width: pageWidth,
+        height: Math.min(pageHeight, maxPageHeight),
+      });
     } else {
-      // Desktop — double page
-      setDimensions({ width: 420, height: 600 }); // landscape-ish to prefer spread
+      setDimensions({ width: 420, height: 600 });
     }
   }, [screenWidth, screenHeight]);
 
   const onDocumentLoadSuccess = useCallback((pdf) => {
     try {
       const pages = pdf?.numPages ?? 0;
-      console.log('PDF loaded successfully with', pages, 'pages');
+  // PDF loaded
       setNumPages(pages);
       setPdfDocument(pdf);
       setCurrentPageIndex(0);
@@ -125,47 +233,133 @@ function FlipBook() {
       setZoomLevel(1);
       // mark the initial load complete so library can remain visible on later loads
       setHasLoadedOnce(true);
-      // Read first page to detect intrinsic aspect ratio (width/height)
-      pdf.getPage(1)
-        .then((page) => {
-          const vp = page.getViewport({ scale: 1 });
-          // Avoid zero division
-          if (vp && vp.height) {
-            setPdfAspect(vp.width / vp.height);
-          } else {
-            setPdfAspect(null);
+
+      // Analyze all pages to get individual dimensions and determine overall orientation
+      const analyzeAllPages = async () => {
+        try {
+          let landscapeCount = 0;
+          let portraitCount = 0;
+          const dimensions = {};
+
+          // Get dimensions for ALL pages
+          for (let i = 1; i <= pages; i++) {
+            try {
+              const page = await pdf.getPage(i);
+              const vp = page.getViewport({ scale: 1 });
+
+              if (vp && vp.width && vp.height) {
+                const aspectRatio = vp.width / vp.height;
+                const isLandscape = aspectRatio > 1;
+
+                // Store each page's dimensions and orientation
+                dimensions[i] = {
+                  width: vp.width,
+                  height: vp.height,
+                  aspectRatio: aspectRatio,
+                  isLandscape: isLandscape,
+                };
+
+                // totalAspectRatio not used after removing debug logs
+
+                // Count orientation for overall determination
+                if (isLandscape) {
+                  landscapeCount++;
+                } else {
+                  portraitCount++;
+                }
+              }
+            } catch {
+              // failed to analyze page
+            }
           }
-        })
-        .catch(() => setPdfAspect(null));
+
+          // Store all page dimensions
+          setPageDimensions(dimensions);
+
+          // Determine overall orientation based on majority
+          const isLandscape = landscapeCount > portraitCount;
+          setIsLandscapeOriented(isLandscape);
+
+               // analysis results computed
+        } catch {
+          // error analyzing PDF pages
+          // Fallback to first page only
+          pdf
+            .getPage(1)
+            .then((page) => {
+              const vp = page.getViewport({ scale: 1 });
+              if (vp && vp.height) {
+                const aspect = vp.width / vp.height;
+                setIsLandscapeOriented(aspect > 1);
+                setPageDimensions({
+                  1: {
+                    width: vp.width,
+                    height: vp.height,
+                    aspectRatio: aspect,
+                    isLandscape: aspect > 1,
+                  },
+                });
+              } else {
+                setIsLandscapeOriented(false);
+              }
+            })
+            .catch(() => {
+              setIsLandscapeOriented(false);
+            });
+        }
+      };
+
+      analyzeAllPages();
     } catch {
       // ignore
     }
   }, []);
 
   const onDocumentLoadError = useCallback((error) => {
-    console.error('Error loading PDF:', error);
+    // Log the full error for diagnostics and show a friendly message in UI
+  // Error loading PDF
+    try {
+      // Surface a minimal toast-like alert without external deps
+      const msg =
+        typeof error?.message === "string"
+          ? error.message
+          : "Failed to load PDF file.";
+      // Avoid duplicate alerts on repeated errors
+      if (!document.querySelector("#pdf-load-error-alert")) {
+        const el = document.createElement("div");
+        el.id = "pdf-load-error-alert";
+        el.textContent = msg;
+        Object.assign(el.style, {
+          position: "fixed",
+          bottom: "16px",
+          left: "16px",
+          padding: "10px 14px",
+          background: "#1f2937",
+          color: "#fefefe",
+          borderRadius: "8px",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+          zIndex: 9999,
+          maxWidth: "90vw",
+          fontSize: "14px",
+        });
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 5000);
+      }
+    } catch {
+      /* noop */
+    }
   }, []);
 
-  const handleSelectPdf = useCallback((file) => {
-    if (!file || file === currentFile) return;
-    setNumPages(null);
-    setPdfDocument(null);
-    setCurrentPageIndex(0);
-    setCurrentFile(file);
-  }, [currentFile]);
-
-  const currentTitle = useMemo(() => {
-    const item = pdfLibrary.find((p) => p.file === currentFile);
-    if (item?.title) return item.title;
-    try {
-      const raw = decodeURIComponent(currentFile.split('/').pop() || 'Document');
-      const noExt = raw.replace(/\.pdf$/i, '');
-      const spaced = noExt.replace(/[-_]+/g, ' ');
-      return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-    } catch {
-      return 'Document';
-    }
-  }, [currentFile]);
+  const handleSelectPdf = useCallback(
+    (file) => {
+      if (!file || file === currentFile) return;
+      setNumPages(null);
+      setPdfDocument(null);
+      setCurrentPageIndex(0);
+      setCurrentFile(file);
+    },
+    [currentFile]
+  );
 
   // Zoom handlers controlled here and passed to Toolbar
   const handleZoomIn = useCallback(() => {
@@ -188,153 +382,183 @@ function FlipBook() {
     }
   }, [zoomLevel, pan.x, pan.y]);
 
+  // debug logging removed
+
   return (
     <div
       ref={containerRef}
       className={[
-        'bg-gray-900 min-h-screen w-full',
-        isFullscreen ? 'px-0 py-0 overflow-hidden' : 'px-2 sm:px-4 py-6 sm:py-8 overflow-x-hidden',
-      ].join(' ')}
+        "bg-gray-900 min-h-screen w-full",
+        isFullscreen ? "px-0 py-0 overflow-hidden" : "overflow-x-hidden",
+      ].join(" ")}
     >
       <div
         className={[
           isFullscreen
-            ? 'max-w-none w-full mx-auto flex flex-col gap-2'
-            : 'max-w-7xl mx-auto w-full flex flex-col sm:flex-row gap-4 sm:gap-6',
-        ].join(' ')}
+            ? "max-w-none w-full h-screen flex flex-col gap-2"
+            : "w-full h-screen flex flex-col sm:flex-row",
+        ].join(" ")}
       >
-        {/* Left transparent library - hidden on mobile; also hide during very first load */}
+        {/* Left transparent library - fixed to left edge on desktop; hidden on mobile; also hide during very first load */}
         {hasLoadedOnce ? (
-          <div className="hidden sm:block">
-            <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
+          <div className="hidden sm:block sm:w-64 shrink-0">
+            <div className="h-full py-6 pl-4">
+              <LeftLibrary
+                items={pdfLibrary}
+                currentFile={currentFile}
+                onSelect={handleSelectPdf}
+              />
+            </div>
           </div>
         ) : null}
 
-        {/* Main viewer area */}
-        <div className="flex-1 flex flex-col items-center">
-          {!isFullscreen && (
-            <div className="text-3xl sm:text-4xl font-bold md:font-extrabold text-white mb-6 sm:mb-8 self-start">{currentTitle}</div>
-          )}
-
-          <Document
-        file={currentFile}
-        onLoadSuccess={onDocumentLoadSuccess}
-        onLoadError={onDocumentLoadError}
-        loading={<PdfLoading />}
-      >
-        {numPages && (
-          <div className="flex flex-col items-center gap-4 w-full">
-            {/* Zoomable viewport wrapper with drag-to-pan when zoomed */}
-            <div className="w-full" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {(() => {
-                // Compute a per-page width that guarantees the PDF fits within flipbook page width/height
-                // If we know the aspect ratio (w/h), limit by both dimensions; otherwise fallback to width
-                const targetByHeight = pdfAspect ? Math.floor(dimensions.height * pdfAspect) : dimensions.width;
-                const pageWidthFit = Math.min(dimensions.width, targetByHeight);
-                const bookWidth = pageWidthFit; // each page width
-                const wrapperWidth = isMobile ? bookWidth : bookWidth * 2; // two pages on desktop
-                // Pointer handlers for panning when zoomed
-                const handlePointerDown = (e) => {
-                  if (zoomLevel <= 1) return;
-                  // Prevent flip action and text selection
-                  e.preventDefault();
-                  e.stopPropagation();
-                  try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
-                  setIsPanning(true);
-                  panStartRef.current = {
-                    x: e.clientX,
-                    y: e.clientY,
-                    panX: pan.x,
-                    panY: pan.y,
-                  };
-                };
-                const handlePointerMove = (e) => {
-                  if (!isPanning || zoomLevel <= 1) return;
-                  const dx = e.clientX - panStartRef.current.x;
-                  const dy = e.clientY - panStartRef.current.y;
-                  setPan({
-                    x: panStartRef.current.panX + dx,
-                    y: panStartRef.current.panY + dy,
-                  });
-                };
-                const endPan = (e) => {
-                  if (!isPanning) return;
-                  try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
-                  setIsPanning(false);
-                };
-                return (
+        <div className="flex flex-col w-full items-center">
+          {/* Main viewer area - centered with padding */}
+          <div className="flex-1 flex flex-col items-center justify-center mx-14 py-6 ">
+            <Document
+              file={currentFile}
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
+              loading={<PdfLoading />}
+            >
+              {numPages && (
+                <div className="flex flex-col items-center gap-4 w-full">
+                  {/* Zoomable viewport wrapper with drag-to-pan when zoomed */}
                   <div
-                    style={{
-                      width: wrapperWidth,
-                      height: dimensions.height,
-                      margin: '0 auto',
-                      overflow: 'hidden',
-                      cursor: zoomLevel > 1 ? 'move' : 'default',
-                      touchAction: zoomLevel > 1 ? 'none' : 'auto',
-                      userSelect: isPanning ? 'none' : 'auto',
-                    }}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={endPan}
-                    onPointerLeave={endPan}
+                    className="w-full"
+                    style={{ WebkitOverflowScrolling: "touch" }}
                   >
-                    <div
-                      style={{
-                        margin: '0 auto',
-                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
-                        transformOrigin: 'top center',
-                        willChange: 'transform',
-                        // Keep base dimensions so scaling works predictably
-                        width: wrapperWidth,
-                      }}
-                    >
-                      <HTMLFlipBook 
-                        ref={flipbookRef}
-                        width={bookWidth} 
-                        height={dimensions.height}
-                        size="fixed"
-                        minWidth={280}
-                        maxWidth={600}
-                        minHeight={350}
-                        maxHeight={900}
-                        showCover={true}
-                        drawShadow={true}
-                        flippingTime={600}
-                        // On mobile, force single-page mode; on larger screens, let spreads show
-                        usePortrait={isMobile}
-                        startPage={0}
-                        maxShadowOpacity={0.5}
-                        mobileScrollSupport={true}
-                        className="flipbook"
-                        onFlip={() => {
-                          try {
-                            const idx = flipbookRef.current?.pageFlip()?.getCurrentPageIndex?.();
-                            if (typeof idx === 'number') setCurrentPageIndex(idx);
-                          } catch {
-                            // ignore
-                          }
-                        }}
-                      >
-                        {Array.from(new Array(numPages), (el, index) => (
-                          <PageContent 
-                            key={`page_${index + 1}`} 
-                            pageNumber={index + 1}
-                            maxWidth={bookWidth}
-                            maxHeight={dimensions.height}
-                          />
-                        ))}
-                      </HTMLFlipBook>
-                    </div>
+                    {(() => {
+                      // Use current page dimensions instead of static dimensions
+                      const activeDimensions = currentPageDimensions;
+                      const bookWidth = activeDimensions.width;
+                      const bookHeight = activeDimensions.height;
+                      const wrapperWidth = isMobile ? bookWidth : bookWidth * 2; // two pages on desktop
+                      // Pointer handlers for panning when zoomed
+                      const handlePointerDown = (e) => {
+                        if (zoomLevel <= 1) return;
+                        // Prevent flip action and text selection
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try {
+                          e.currentTarget.setPointerCapture?.(e.pointerId);
+                        } catch {
+                          /* noop */
+                        }
+                        setIsPanning(true);
+                        panStartRef.current = {
+                          x: e.clientX,
+                          y: e.clientY,
+                          panX: pan.x,
+                          panY: pan.y,
+                        };
+                      };
+                      const handlePointerMove = (e) => {
+                        if (!isPanning || zoomLevel <= 1) return;
+                        const dx = e.clientX - panStartRef.current.x;
+                        const dy = e.clientY - panStartRef.current.y;
+                        setPan({
+                          x: panStartRef.current.panX + dx,
+                          y: panStartRef.current.panY + dy,
+                        });
+                      };
+                      const endPan = (e) => {
+                        if (!isPanning) return;
+                        try {
+                          e.currentTarget.releasePointerCapture?.(e.pointerId);
+                        } catch {
+                          /* noop */
+                        }
+                        setIsPanning(false);
+                      };
+                      return (
+                        <div
+                          style={{
+                            width: wrapperWidth,
+                            height: bookHeight,
+                            margin: "0 auto",
+                            overflow: "hidden",
+                            cursor: zoomLevel > 1 ? "move" : "default",
+                            touchAction: zoomLevel > 1 ? "none" : "auto",
+                            userSelect: isPanning ? "none" : "auto",
+                            transition:
+                              "width 0.4s ease-in-out, height 0.4s ease-in-out",
+                          }}
+                          onPointerDown={handlePointerDown}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={endPan}
+                          onPointerLeave={endPan}
+                        >
+                          <div
+                            style={{
+                              margin: "0 auto",
+                              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
+                              transformOrigin: "top center",
+                              willChange: "transform",
+                              // Keep base dimensions so scaling works predictably
+                              width: wrapperWidth,
+                            }}
+                          >
+                            <HTMLFlipBook
+                              ref={flipbookRef}
+                              width={bookWidth}
+                              height={bookHeight}
+                              size="fixed"
+                              minWidth={280}
+                              maxWidth={1200}
+                              minHeight={350}
+                              maxHeight={1000}
+                              showCover={true}
+                              drawShadow={true}
+                              flippingTime={600}
+                              // On mobile, force single-page mode; on larger screens, use orientation
+                              // Portrait mode shows single pages, landscape shows spreads
+                              usePortrait={isMobile || !isLandscapeOriented}
+                              startPage={0}
+                              maxShadowOpacity={0.5}
+                              mobileScrollSupport={true}
+                              className="flipbook"
+                              onFlip={() => {
+                                try {
+                                  const idx = flipbookRef.current
+                                    ?.pageFlip()
+                                    ?.getCurrentPageIndex?.();
+                                  if (typeof idx === "number")
+                                    setCurrentPageIndex(idx);
+                                } catch {
+                                  // ignore
+                                }
+                              }}
+                            >
+                              {Array.from(new Array(numPages), (el, index) => {
+                                const pageNum = index + 1;
+                                const pageInfo = pageDimensions[pageNum];
+
+                                return (
+                                  <PageContent
+                                    key={`page_${pageNum}`}
+                                    pageNumber={pageNum}
+                                    width={bookWidth}
+                                    height={bookHeight}
+                                    pageInfo={pageInfo}
+                                  />
+                                );
+                              })}
+                            </HTMLFlipBook>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
-                );
-              })()}
-            </div>
+                </div>
+              )}
+            </Document>
           </div>
-        )}
-      </Document>
           {/* Toolbar placed under the document - hidden until document is loaded */}
           {numPages ? (
-            <div className={isFullscreen ? 'w-full mt-2' : 'w-full lg:w-3/4 mt-4'}>
+            <div
+              className={isFullscreen ? "w-full mt-2" : "w-full max-w-4xl m-4"}
+            >
               <Toolbar
                 flipbookRef={flipbookRef}
                 containerRef={containerRef}
@@ -351,11 +575,14 @@ function FlipBook() {
             </div>
           ) : null}
         </div>
-
         {/* Mobile library at bottom; also hide during very first load */}
         {hasLoadedOnce ? (
-          <div className="sm:hidden">
-            <LeftLibrary items={pdfLibrary} currentFile={currentFile} onSelect={handleSelectPdf} />
+          <div className="sm:hidden px-4 pb-6">
+            <LeftLibrary
+              items={pdfLibrary}
+              currentFile={currentFile}
+              onSelect={handleSelectPdf}
+            />
           </div>
         ) : null}
       </div>

@@ -9,7 +9,7 @@ import { FaRegFilePdf } from 'react-icons/fa6';
 const LeftLibrary = ({ items = [], currentFile, onSelect }) => {
   return (
     <aside
-      className="flex flex-col w-full sm:w-64 sm:h-full shrink-0 rounded-xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-md"
+      className="flex flex-col w-full h-full shrink-0 rounded-xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-md"
       aria-label="PDF Library"
     >
       <div className="px-4 py-3 border-b border-white/10">
