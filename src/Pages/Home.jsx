@@ -8,7 +8,7 @@ import FlipBook from './FlipBook';
 const Home = () => {
   return (
     <div className='bg-black'>
-      <RightSidebar />
+      {/* <RightSidebar /> */}
       <Routes>
         <Route path='/' element={<FlipBook />} />
         <Route path='/contact' element={<ContactUs />} />
