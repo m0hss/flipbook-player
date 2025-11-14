@@ -156,7 +156,7 @@ function FlipBook() {
       const mobileBaseWidth = Math.max(280, Math.min(screenW - 32, 350));
       // Increase mobile heights slightly for better readability on small screens
       const portraitHeight = Math.round(mobileBaseWidth * (470 / 350) * 1.15); // +15%
-      const landscapeHeight = Math.round(mobileBaseWidth * (250 / 392) * 1.1); // +10%
+      const landscapeHeight = Math.round(mobileBaseWidth * (250 / 395) * 1.1); // +10%
 
       return {
         portrait: { width: mobileBaseWidth, height: portraitHeight },
