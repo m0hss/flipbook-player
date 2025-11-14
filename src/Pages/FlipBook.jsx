@@ -42,19 +42,15 @@ const PageContent = React.forwardRef(
 
     // Calculate the best fit for this specific page within the fixed viewer size
     const getPageScale = () => {
+      // Always use the current container height for both portrait and landscape
+      // Landscape: scale by width, but keep height fixed for consistent book size
       if (!pageInfo) return { width, height };
 
-      const pageAspect = pageInfo.aspectRatio;
-      const viewerAspect = width / height;
-
-      // Fit the page to the viewer while maintaining aspect ratio
-      if (pageAspect > viewerAspect) {
-        // Page is wider relative to viewer - fit by width
-        return { width, height: undefined };
-      } else {
-        // Page is taller relative to viewer - fit by height
-        return { width: undefined, height };
+      if (pageInfo.isLandscape) {
+        return { width, height };
       }
+      // Portrait: fit by height only
+      return { width: undefined, height };
     };
 
     const { width: pageWidth, height: pageHeight } = getPageScale();
@@ -114,10 +110,15 @@ function FlipBook() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   // Track if we've completed at least one successful load (for initial gating of library)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-  // Track if PDF pages are predominantly landscape or portrait
-  const [isLandscapeOriented, setIsLandscapeOriented] = useState(false);
+  // Page-level dimensions/orientation are tracked in `pageDimensions`
   // Store dimensions for each individual page
   const [pageDimensions, setPageDimensions] = useState({});
+  // Track when flipbook is remounting to show loader overlay
+  const [isRemounting, setIsRemounting] = useState(false);
+  const remountTimeoutRef = useRef(null);
+  const previousDimensionsRef = useRef({ width: 0, height: 0 });
+  // Track the target page to restore after remount (prevents flash to page 1)
+  const targetPageRef = useRef(0);
 
   const flipbookRef = useRef(null);
   const containerRef = useRef(null);
@@ -155,7 +156,7 @@ function FlipBook() {
       const mobileBaseWidth = Math.max(280, Math.min(screenW - 32, 350));
       // Increase mobile heights slightly for better readability on small screens
       const portraitHeight = Math.round(mobileBaseWidth * (470 / 350) * 1.15); // +15%
-      const landscapeHeight = Math.round(mobileBaseWidth * (200 / 350) * 1.3); // +10%
+      const landscapeHeight = Math.round(mobileBaseWidth * (250 / 392) * 1.1); // +10%
 
       return {
         portrait: { width: mobileBaseWidth, height: portraitHeight },
@@ -175,7 +176,7 @@ function FlipBook() {
       // Compute per-page width as ~90% of half the usable width, capped to avoid extreme sizes.
       const perPageMax = Math.min(Math.floor((usableWidth / 2) * 0.95), 1400);
       const landscapeWidth = Math.max(650, perPageMax); // ensure at least previous default
-      const landscapeBaseHeight = 460; // original base height for 850 width
+      const landscapeBaseHeight = 716; // original base height for 850 width
       const landscapeBaseWidth = 1024;
       const landscapeHeight = Math.round((landscapeWidth * landscapeBaseHeight) / landscapeBaseWidth);
 
@@ -203,6 +204,41 @@ function FlipBook() {
     return selectedSize;
   }, [currentPageIndex, pageDimensions, viewerSizes, dimensions]);
 
+  // Detect when page dimensions change (landscape <-> portrait transition) and show loader
+  useEffect(() => {
+    const currentWidth = currentPageDimensions.width;
+    const currentHeight = currentPageDimensions.height;
+    const prevWidth = previousDimensionsRef.current.width;
+    const prevHeight = previousDimensionsRef.current.height;
+
+    // If dimensions changed (and we have a previous value), trigger remount overlay
+    if (prevWidth > 0 && (currentWidth !== prevWidth || currentHeight !== prevHeight)) {
+      // Store current page before remount
+      targetPageRef.current = currentPageIndex;
+      
+      setIsRemounting(true);
+
+      // Clear any pending timeout
+      if (remountTimeoutRef.current) {
+        clearTimeout(remountTimeoutRef.current);
+      }
+
+      // Hide loader after a brief delay to allow flipbook to remount smoothly
+      remountTimeoutRef.current = setTimeout(() => {
+        setIsRemounting(false);
+      }, 400); // match transition duration
+    }
+
+    // Update ref for next comparison
+    previousDimensionsRef.current = { width: currentWidth, height: currentHeight };
+
+    return () => {
+      if (remountTimeoutRef.current) {
+        clearTimeout(remountTimeoutRef.current);
+      }
+    };
+  }, [currentPageDimensions, currentPageIndex]);
+
   // Set default/fallback dimensions based on screen size - used when page dimensions not yet available
   useEffect(() => {
     const width = screenWidth || window.innerWidth;
@@ -211,7 +247,7 @@ function FlipBook() {
     // Simple fallback dimensions
     if (width < 640) {
       const pageWidth = Math.max(280, Math.min(width - 32, 420));
-      const pageHeight = Math.round(pageWidth * 1.4);
+      const pageHeight = Math.round(pageWidth * 1.5);
       const maxPageHeight = Math.max(360, height - 160);
       setDimensions({
         width: pageWidth,
@@ -237,8 +273,6 @@ function FlipBook() {
       // Analyze all pages to get individual dimensions and determine overall orientation
       const analyzeAllPages = async () => {
         try {
-          let landscapeCount = 0;
-          let portraitCount = 0;
           const dimensions = {};
 
           // Get dimensions for ALL pages
@@ -261,12 +295,7 @@ function FlipBook() {
 
                 // totalAspectRatio not used after removing debug logs
 
-                // Count orientation for overall determination
-                if (isLandscape) {
-                  landscapeCount++;
-                } else {
-                  portraitCount++;
-                }
+                // Count not needed when we size per-page
               }
             } catch {
               // failed to analyze page
@@ -276,9 +305,7 @@ function FlipBook() {
           // Store all page dimensions
           setPageDimensions(dimensions);
 
-          // Determine overall orientation based on majority
-          const isLandscape = landscapeCount > portraitCount;
-          setIsLandscapeOriented(isLandscape);
+          // Overall orientation not needed when using per-page sizing; keep counts for potential analytics only
 
                // analysis results computed
         } catch {
@@ -290,21 +317,21 @@ function FlipBook() {
               const vp = page.getViewport({ scale: 1 });
               if (vp && vp.height) {
                 const aspect = vp.width / vp.height;
-                setIsLandscapeOriented(aspect > 1);
+                const isLand = aspect > 1;
                 setPageDimensions({
                   1: {
                     width: vp.width,
                     height: vp.height,
                     aspectRatio: aspect,
-                    isLandscape: aspect > 1,
+                    isLandscape: isLand,
                   },
                 });
               } else {
-                setIsLandscapeOriented(false);
+                // no-op; default portrait-like layout will be used
               }
             })
             .catch(() => {
-              setIsLandscapeOriented(false);
+              // no-op; default portrait-like layout will be used
             });
         }
       };
@@ -357,6 +384,12 @@ function FlipBook() {
       setPdfDocument(null);
       setCurrentPageIndex(0);
       setCurrentFile(file);
+      // Reset orientation- and page-specific state so the new document starts clean
+      setPageDimensions({});
+      setZoomLevel(1);
+      setPan({ x: 0, y: 0 });
+      // Reset target page when switching files
+      targetPageRef.current = 0;
     },
     [currentFile]
   );
@@ -388,7 +421,7 @@ function FlipBook() {
     <div
       ref={containerRef}
       className={[
-        "bg-gray-900 min-h-screen w-full",
+        "bg-gray-900 book-bg min-h-screen w-full",
         isFullscreen ? "px-0 py-0 overflow-hidden" : "overflow-x-hidden",
       ].join(" ")}
     >
@@ -397,6 +430,7 @@ function FlipBook() {
           isFullscreen
             ? "max-w-none w-full h-screen flex flex-col gap-2"
             : "w-full h-screen flex flex-col sm:flex-row",
+          "book-layout"
         ].join(" ")}
       >
         {/* Left transparent library - fixed to left edge on desktop; hidden on mobile; also hide during very first load */}
@@ -416,6 +450,8 @@ function FlipBook() {
           {/* Main viewer area - centered with padding */}
           <div className="flex-1 flex flex-col items-center justify-center mx-14 py-6 ">
             <Document
+              // Force a full remount when switching files to avoid stale internal caches
+              key={currentFile}
               file={currentFile}
               onLoadSuccess={onDocumentLoadSuccess}
               onLoadError={onDocumentLoadError}
@@ -433,7 +469,9 @@ function FlipBook() {
                       const activeDimensions = currentPageDimensions;
                       const bookWidth = activeDimensions.width;
                       const bookHeight = activeDimensions.height;
-                      const wrapperWidth = isMobile ? bookWidth : bookWidth * 2; // two pages on desktop
+                      // Spread mode on desktop for all documents (mixed portrait/landscape supported)
+                      const isSpread = !isMobile;
+                      const wrapperWidth = isSpread ? bookWidth * 2 : bookWidth;
                       // Pointer handlers for panning when zoomed
                       const handlePointerDown = (e) => {
                         if (zoomLevel <= 1) return;
@@ -473,6 +511,7 @@ function FlipBook() {
                       };
                       return (
                         <div
+                          className="book-frame relative"
                           style={{
                             width: wrapperWidth,
                             height: bookHeight,
@@ -489,7 +528,14 @@ function FlipBook() {
                           onPointerUp={endPan}
                           onPointerLeave={endPan}
                         >
+                          {/* Show loading overlay during dimension-change remount */}
+                          {isRemounting && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm pointer-events-none">
+                              <PdfLoading />
+                            </div>
+                          )}
                           <div
+                            className="book-viewport"
                             style={{
                               margin: "0 auto",
                               transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
@@ -497,15 +543,19 @@ function FlipBook() {
                               willChange: "transform",
                               // Keep base dimensions so scaling works predictably
                               width: wrapperWidth,
+                              opacity: isRemounting ? 0.3 : 1,
+                              transition: "opacity 0.2s ease-in-out",
                             }}
                           >
                             <HTMLFlipBook
+                              // Force re-initialization when file or spread mode changes to prevent stuck state
+                              key={`${currentFile}-${isSpread ? "spread" : "single"}-${bookWidth}x${bookHeight}`}
                               ref={flipbookRef}
                               width={bookWidth}
                               height={bookHeight}
                               size="fixed"
                               minWidth={280}
-                              maxWidth={1200}
+                              maxWidth={2200}
                               minHeight={350}
                               maxHeight={1000}
                               showCover={true}
@@ -513,8 +563,8 @@ function FlipBook() {
                               flippingTime={600}
                               // On mobile, force single-page mode; on larger screens, use orientation
                               // Portrait mode shows single pages, landscape shows spreads
-                              usePortrait={isMobile || !isLandscapeOriented}
-                              startPage={0}
+                              usePortrait={!isSpread}
+                              startPage={targetPageRef.current || 0}
                               maxShadowOpacity={0.5}
                               mobileScrollSupport={true}
                               className="flipbook"
@@ -523,8 +573,10 @@ function FlipBook() {
                                   const idx = flipbookRef.current
                                     ?.pageFlip()
                                     ?.getCurrentPageIndex?.();
-                                  if (typeof idx === "number")
+                                  if (typeof idx === "number") {
                                     setCurrentPageIndex(idx);
+                                    targetPageRef.current = idx;
+                                  }
                                 } catch {
                                   // ignore
                                 }
@@ -557,7 +609,7 @@ function FlipBook() {
           {/* Toolbar placed under the document - hidden until document is loaded */}
           {numPages ? (
             <div
-              className={isFullscreen ? "w-full mt-2" : "w-full max-w-4xl m-4"}
+              className={isFullscreen ? "w-full mt-2" : "w-full max-w-4xl m-4 px-2"}
             >
               <Toolbar
                 flipbookRef={flipbookRef}

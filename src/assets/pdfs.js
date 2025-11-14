@@ -10,7 +10,7 @@ export const pdfLibrary = [
   {
     id: 'Certificats',
     title: 'Certificats',
-    file: '/Certif.pdf',
+    file: '/Certif02.pdf',
   },
 ];
 
