@@ -503,7 +503,7 @@ function FlipBook() {
 
         <div className="flex flex-col w-full items-center">
           {/* Main viewer area - centered with responsive padding */}
-          <div className="flex-1 flex flex-col items-center justify-center mx-4 sm:mx-8 md:mx-4 lg:mx-2 xl:mx-14 2xl:mx-16 py-6">
+          <div className="flex-1 flex flex-col items-center justify-center mx-4 sm:mx-8 md:mx-4 lg:mx-2 xl:mx-8 2xl:mx-16 py-6">
             <Document
               // Force a full remount when switching files to avoid stale internal caches
               key={currentFile}
