@@ -30,9 +30,6 @@ const PageContent = React.forwardRef(
     // Reset loading state whenever the page number changes
     React.useEffect(() => {
       setIsPageLoading(true);
-      return () => {
-        // no-op cleanup; ensure no lingering timers (none are used now)
-      };
     }, [pageNumber]);
 
     // As soon as the page renders successfully, hide the loader immediately (no artificial delay)
@@ -99,7 +96,7 @@ function FlipBook() {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [currentFile, setCurrentFile] = useState(
-    pdfLibrary?.[0]?.file || "/py-scripting.pdf"
+    pdfLibrary?.[0]?.file || "/Certif02.pdf"
   );
   const [zoomLevel, setZoomLevel] = useState(1);
   // Pan state for dragging when zoomed in
@@ -255,7 +252,6 @@ function FlipBook() {
     const selectedSize = pageInfo.isLandscape
       ? viewerSizes.landscape
       : viewerSizes.portrait;
-    // debug logging removed
     return selectedSize;
   }, [currentPageIndex, pageDimensions, viewerSizes, dimensions]);
 
@@ -316,21 +312,16 @@ function FlipBook() {
   const onDocumentLoadSuccess = useCallback((pdf) => {
     try {
       const pages = pdf?.numPages ?? 0;
-  // PDF loaded
       setNumPages(pages);
       setPdfDocument(pdf);
       setCurrentPageIndex(0);
-      // reset zoom when a new document loads
       setZoomLevel(1);
-      // mark the initial load complete so library can remain visible on later loads
       setHasLoadedOnce(true);
 
-      // Analyze all pages to get individual dimensions and determine overall orientation
       const analyzeAllPages = async () => {
         try {
           const dimensions = {};
 
-          // Get dimensions for ALL pages
           for (let i = 1; i <= pages; i++) {
             try {
               const page = await pdf.getPage(i);
@@ -340,32 +331,20 @@ function FlipBook() {
                 const aspectRatio = vp.width / vp.height;
                 const isLandscape = aspectRatio > 1;
 
-                // Store each page's dimensions and orientation
                 dimensions[i] = {
                   width: vp.width,
                   height: vp.height,
                   aspectRatio: aspectRatio,
                   isLandscape: isLandscape,
                 };
-
-                // totalAspectRatio not used after removing debug logs
-
-                // Count not needed when we size per-page
               }
             } catch {
-              // failed to analyze page
+              // Failed to analyze page
             }
           }
 
-          // Store all page dimensions
           setPageDimensions(dimensions);
-
-          // Overall orientation not needed when using per-page sizing; keep counts for potential analytics only
-
-               // analysis results computed
         } catch {
-          // error analyzing PDF pages
-          // Fallback to first page only
           pdf
             .getPage(1)
             .then((page) => {
@@ -381,12 +360,10 @@ function FlipBook() {
                     isLandscape: isLand,
                   },
                 });
-              } else {
-                // no-op; default portrait-like layout will be used
               }
             })
             .catch(() => {
-              // no-op; default portrait-like layout will be used
+              // Failed to load first page
             });
         }
       };
@@ -398,15 +375,12 @@ function FlipBook() {
   }, []);
 
   const onDocumentLoadError = useCallback((error) => {
-    // Log the full error for diagnostics and show a friendly message in UI
-  // Error loading PDF
     try {
-      // Surface a minimal toast-like alert without external deps
       const msg =
         typeof error?.message === "string"
           ? error.message
           : "Failed to load PDF file.";
-      // Avoid duplicate alerts on repeated errors
+
       if (!document.querySelector("#pdf-load-error-alert")) {
         const el = document.createElement("div");
         el.id = "pdf-load-error-alert";
@@ -439,11 +413,9 @@ function FlipBook() {
       setPdfDocument(null);
       setCurrentPageIndex(0);
       setCurrentFile(file);
-      // Reset orientation- and page-specific state so the new document starts clean
       setPageDimensions({});
       setZoomLevel(1);
       setPan({ x: 0, y: 0 });
-      // Reset target page when switching files
       targetPageRef.current = 0;
     },
     [currentFile]
@@ -469,8 +441,6 @@ function FlipBook() {
       setPan({ x: 0, y: 0 });
     }
   }, [zoomLevel, pan.x, pan.y]);
-
-  // debug logging removed
 
   return (
     <div

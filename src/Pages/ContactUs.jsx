@@ -9,10 +9,8 @@ import usePageTransition from '../hooks/usePageTransition';
 const ContactUs = () => {
   const showPage = usePageTransition();
 
-
   const handleSubmit = (e) => {
     e.preventDefault();
-    console.log("submitted");
   };
 
   return (
