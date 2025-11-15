@@ -123,7 +123,7 @@ function FlipBook() {
   const flipbookRef = useRef(null);
   const containerRef = useRef(null);
   const { width: screenWidth, height: screenHeight } = useScreenSize();
-  const isMobile = screenWidth < 640; // tailwind 'sm' breakpoint
+  const isMobile = screenWidth < 940; // tailwind 'sm' breakpoint
 
   // Listen to fullscreen state
   useEffect(() => {
@@ -142,13 +142,35 @@ function FlipBook() {
   // Fixed viewer sizes for portrait and landscape pages
   const viewerSizes = useMemo(() => {
     const availableWidth = screenWidth || window.innerWidth;
+    const availableHeight = screenHeight || window.innerHeight;
 
     // Estimate available horizontal space by subtracting the left library (when shown)
-    // and container margins (mx-14 ~= 56px each side).
+    // and container margins (responsive: mx-4 to mx-16).
     const leftSidebarWidth = hasLoadedOnce ? 256 : 0; // tailwind 'sm:w-64' => 16rem = 256px
-    const containerMargins = 56 * 2; // mx-14 left+right = 56px * 2
+    
+    // Calculate responsive margins based on screen width
+    let containerMargins;
+    if (availableWidth < 640) {
+      containerMargins = 16 * 2; // mx-4: 1rem = 16px each side
+    } else if (availableWidth < 768) {
+      containerMargins = 32 * 2; // mx-8: 2rem = 32px each side
+    } else if (availableWidth < 1024) {
+      containerMargins = 36 * 2; // mx-10: 2.5rem = 40px each side
+    } else if (availableWidth < 1280) {
+      containerMargins = 48 * 2; // mx-12: 3rem = 48px each side
+    } else if (availableWidth < 1536) {
+      containerMargins = 59 * 2; // mx-14: 3.5rem = 56px each side
+    } else {
+      containerMargins = 64 * 2; // mx-16: 4rem = 64px each side
+    }
+    
     const safetyGap = 40; // additional padding/gap to avoid touching edges
     const usableWidth = Math.max(600, availableWidth - leftSidebarWidth - containerMargins - safetyGap);
+    
+    // Account for toolbar and vertical padding
+    const toolbarHeight = 80; // approximate toolbar height
+    const verticalPadding = 96; // top and bottom padding (py-6 = 24px * 2, plus margins)
+    const usableHeight = Math.max(400, availableHeight - toolbarHeight - verticalPadding);
 
     if (isMobile) {
       // Mobile: use a fixed, screen-aware width so landscape pages don't overflow
@@ -164,28 +186,61 @@ function FlipBook() {
         landscape: { width: mobileBaseWidth, height: landscapeHeight },
       };
     } else if (availableWidth < 1024) {
-      // Tablet: use a larger fraction of usableWidth but cap it
-      const landscapeWidth = Math.min(Math.floor(usableWidth * 0.9), 900);
+      // Tablet/Medium screens (640px - 1023px): responsive sizing based on available space
+      const tabletPortraitWidth = Math.min(Math.floor(usableWidth * 0.65), 300);
+      const tabletPortraitHeight = Math.min(Math.round(tabletPortraitWidth * 1.5), usableHeight);
+      
+      const landscapeWidth = Math.min(Math.floor(usableWidth * 0.55), 450);
+      const landscapeHeight = Math.min(Math.round((420 / 600) * landscapeWidth), usableHeight);
+      
       return {
-        portrait: { width: 400, height: 760 },
-        landscape: { width: landscapeWidth, height: Math.round((420 / 600) * landscapeWidth) },
+        portrait: { width: tabletPortraitWidth, height: tabletPortraitHeight },
+        landscape: { width: landscapeWidth, height: landscapeHeight },
       };
-    } else {
-      // Desktop: allow landscape pages to take most of the usable width (split across two pages)
-      // If we show two-page spread, each page can be approximately half of usableWidth.
-      // Compute per-page width as ~90% of half the usable width, capped to avoid extreme sizes.
-      const perPageMax = Math.min(Math.floor((usableWidth / 2) * 0.95), 1400);
-      const landscapeWidth = Math.max(650, perPageMax); // ensure at least previous default
-      const landscapeBaseHeight = 716; // original base height for 850 width
-      const landscapeBaseWidth = 1024;
-      const landscapeHeight = Math.round((landscapeWidth * landscapeBaseHeight) / landscapeBaseWidth);
+    } else if (availableWidth < 1536) {
+      // Large screens (1024px - 1535px): optimize for common desktop resolutions
+      // For spread view, calculate per-page width from usable width
+      const perPageWidth = Math.min(Math.floor((usableWidth / 2) * 1.1), 550);
+      const landscapeWidth = Math.max(400, perPageWidth);
+      const landscapeHeight = Math.min(
+        Math.round((landscapeWidth * 716) / 1024), 
+        usableHeight
+      );
+      
+      // Portrait pages can be slightly larger on large screens
+      const portraitWidth = Math.min(Math.floor(usableWidth * 0.45), 550);
+      const portraitHeight = Math.min(
+        Math.round(portraitWidth * 1.33), 
+        usableHeight
+      );
 
       return {
-        portrait: { width: 450, height: 600 },
+        portrait: { width: portraitWidth, height: portraitHeight },
+        landscape: { width: landscapeWidth, height: landscapeHeight },
+      };
+    } else {
+      // Extra large screens (1536px+): maximize content while maintaining quality
+      // Allow larger spreads on XL screens
+      const perPageMax = Math.min(Math.floor((usableWidth / 2) * 0.95), 700);
+      const landscapeWidth = Math.max(650, perPageMax);
+      const landscapeHeight = Math.min(
+        Math.round((landscapeWidth * 716) / 1024),
+        usableHeight
+      );
+      
+      // Larger portrait dimensions for XL screens
+      const portraitWidth = Math.min(Math.floor(usableWidth * 0.38), 650);
+      const portraitHeight = Math.min(
+        Math.round(portraitWidth * 1.33),
+        usableHeight
+      );
+
+      return {
+        portrait: { width: portraitWidth, height: portraitHeight },
         landscape: { width: landscapeWidth, height: landscapeHeight },
       };
     }
-  }, [screenWidth, isMobile, hasLoadedOnce]);
+  }, [screenWidth, screenHeight, isMobile, hasLoadedOnce]);
 
   // Determine current page dimensions based on whether it's landscape or portrait
   const currentPageDimensions = useMemo(() => {
@@ -447,8 +502,8 @@ function FlipBook() {
         ) : null}
 
         <div className="flex flex-col w-full items-center">
-          {/* Main viewer area - centered with padding */}
-          <div className="flex-1 flex flex-col items-center justify-center mx-14 py-6 ">
+          {/* Main viewer area - centered with responsive padding */}
+          <div className="flex-1 flex flex-col items-center justify-center mx-4 sm:mx-8 md:mx-4 lg:mx-2 xl:mx-14 2xl:mx-16 py-6">
             <Document
               // Force a full remount when switching files to avoid stale internal caches
               key={currentFile}
@@ -609,7 +664,11 @@ function FlipBook() {
           {/* Toolbar placed under the document - hidden until document is loaded */}
           {numPages ? (
             <div
-              className={isFullscreen ? "w-full mt-2" : "w-full max-w-4xl m-4 px-2"}
+              className={
+                isFullscreen 
+                  ? "w-full mt-2 px-2" 
+                  : "w-full max-w-3xl md:max-w-2xl lg:max-w-4xl xl:max-w-5xl 2xl:max-w-6xl m-2 sm:m-3 md:m-4 px-2 sm:px-3"
+              }
             >
               <Toolbar
                 flipbookRef={flipbookRef}
