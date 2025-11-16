@@ -97,6 +97,7 @@ function FlipBook() {
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pdfLibrary, setPdfLibrary] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
   // Pan state for dragging when zoomed in
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -124,6 +125,7 @@ function FlipBook() {
   // Fetch PDF library on mount
   useEffect(() => {
     let mounted = true;
+    setIsLoadingLibrary(true);
     getPdfLibrary().then((library) => {
       if (mounted) {
         setPdfLibrary(library);
@@ -131,9 +133,13 @@ function FlipBook() {
         if (library.length > 0 && !currentFile) {
           setCurrentFile(library[0].file);
         }
+        setIsLoadingLibrary(false);
       }
     }).catch((error) => {
       console.error('Failed to load PDF library:', error);
+      if (mounted) {
+        setIsLoadingLibrary(false);
+      }
     });
     return () => { mounted = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -491,21 +497,29 @@ function FlipBook() {
         <div className="flex flex-col w-full items-center">
           {/* Main viewer area - centered with responsive padding */}
           <div className="flex-1 flex flex-col items-center justify-center mx-4 sm:mx-8 md:mx-4 lg:mx-2 xl:mx-8 2xl:mx-16 py-6">
-            <Document
-              // Force a full remount when switching files to avoid stale internal caches
-              key={currentFile}
-              file={currentFile}
-              onLoadSuccess={onDocumentLoadSuccess}
-              onLoadError={onDocumentLoadError}
-              loading={<PdfLoading />}
-            >
-              {numPages && (
-                <div className="flex flex-col items-center gap-4 w-full">
-                  {/* Zoomable viewport wrapper with drag-to-pan when zoomed */}
-                  <div
-                    className="w-full"
-                    style={{ WebkitOverflowScrolling: "touch" }}
-                  >
+            {isLoadingLibrary ? (
+              <PdfLoading />
+            ) : !currentFile ? (
+              <div className="text-center text-gray-400 py-12">
+                <p className="text-lg mb-2">No PDFs available</p>
+                <p className="text-sm">Please upload a PDF to get started</p>
+              </div>
+            ) : (
+              <Document
+                // Force a full remount when switching files to avoid stale internal caches
+                key={currentFile}
+                file={currentFile}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={<PdfLoading />}
+              >
+                {numPages && (
+                  <div className="flex flex-col items-center gap-4 w-full">
+                    {/* Zoomable viewport wrapper with drag-to-pan when zoomed */}
+                    <div
+                      className="w-full"
+                      style={{ WebkitOverflowScrolling: "touch" }}
+                    >
                     {(() => {
                       // Use current page dimensions instead of static dimensions
                       const activeDimensions = currentPageDimensions;
@@ -646,7 +660,8 @@ function FlipBook() {
                   </div>
                 </div>
               )}
-            </Document>
+              </Document>
+            )}
           </div>
           {/* Toolbar placed under the document - hidden until document is loaded */}
           {numPages ? (
