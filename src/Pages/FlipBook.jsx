@@ -205,7 +205,7 @@ function FlipBook() {
       );
       
       // Portrait pages can be slightly larger on large screens
-      const portraitWidth = Math.min(Math.floor(usableWidth * 0.45), 550);
+      const portraitWidth = Math.min(Math.floor(usableWidth * 0.38), 550);
       const portraitHeight = Math.min(
         Math.round(portraitWidth * 1.33), 
         usableHeight
@@ -226,7 +226,7 @@ function FlipBook() {
       );
       
       // Larger portrait dimensions for XL screens
-      const portraitWidth = Math.min(Math.floor(usableWidth * 0.38), 650);
+      const portraitWidth = Math.min(Math.floor(usableWidth * 0.40), 500);
       const portraitHeight = Math.min(
         Math.round(portraitWidth * 1.33),
         usableHeight
