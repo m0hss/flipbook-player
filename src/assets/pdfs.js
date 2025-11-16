@@ -1,6 +1,5 @@
-// Central list of available PDFs served from the public/ folder
-// To add more, drop a PDF into public/ and add an entry here.
-
+// Central list of available PDFs
+// Base library served from the public/ folder
 const baseLibrary = [
   {
     id: 'Portefeuille',
@@ -14,27 +13,31 @@ const baseLibrary = [
   },
 ];
 
-export function getPdfLibrary() {
-  // Merge user-defined entries from localStorage (if any) with the base list
+// Fetch custom PDFs from Vercel Blob via API
+export async function getPdfLibrary() {
   try {
-    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('pdfLibraryExtras') : null;
-    const extras = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(extras)) {
-      // Filter out duplicates by id (extras override base)
+    const response = await fetch('/api/list');
+    const data = await response.json();
+    if (data.success && Array.isArray(data.data)) {
+      // Merge base library with custom PDFs from Vercel Blob
+      const customPdfs = data.data;
       const map = new Map(baseLibrary.map((x) => [x.id, x]));
-      for (const e of extras) {
-        if (e && e.id && e.title && e.file) {
-          map.set(e.id, e);
+      for (const pdf of customPdfs) {
+        if (pdf && pdf.id && pdf.title && pdf.file) {
+          map.set(pdf.id, pdf);
         }
       }
       return Array.from(map.values());
     }
-  } catch {
-    // ignore parse errors and fall back
+  } catch (error) {
+    console.error('Failed to fetch custom PDFs:', error);
   }
   return baseLibrary;
 }
 
-const pdfLibrary = getPdfLibrary();
+// For backward compatibility, export a static snapshot
+// Note: This won't include custom PDFs on initial load
+// Components should call getPdfLibrary() asynchronously for full list
+const pdfLibrary = baseLibrary;
 export { pdfLibrary };
 export default pdfLibrary;

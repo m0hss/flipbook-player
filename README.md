@@ -2,10 +2,68 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-Currently, two official plugins are available:
+## FlipBook Portfolio
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+A modern PDF flipbook viewer built with React, featuring:
+- Interactive page flipping with support for both mobile and desktop
+- PDF upload and management via Vercel Blob storage
+- Protected admin area with Basic Auth
+- Responsive design with dark mode
+
+### Setup
+
+1. **Clone and install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Configure environment variables:**
+   Copy `.env.example` to `.env` and fill in your values:
+   ```bash
+   cp .env.example .env
+   ```
+
+   Required variables:
+   - `VITE_BASIC_AUTH_USER` and `VITE_BASIC_AUTH_PASS`: Credentials for the `/upload` admin page
+   - `BASIC_AUTH_USER` and `BASIC_AUTH_PASS`: Same credentials for API routes (server-side)
+   - `BLOB_READ_WRITE_TOKEN`: Vercel Blob storage token (get from Vercel Dashboard > Storage)
+
+3. **Development:**
+   ```bash
+   npm run dev
+   ```
+
+4. **Deploy to Vercel:**
+   - Connect your repository to Vercel
+   - Add environment variables in Vercel Dashboard > Settings > Environment Variables
+   - Create a Blob store in Vercel Dashboard > Storage
+   - Deploy!
+
+### Features
+
+#### PDF Upload (`/upload`)
+- Protected route requiring Basic Auth credentials
+- Upload PDFs to Vercel Blob storage
+- Manage custom PDF library (add/delete)
+- PDFs are persisted in cloud storage
+
+#### PDF Viewer (`/`)
+- Smooth page flipping animations
+- Zoom and pan controls
+- Responsive layout for mobile and desktop
+- Support for mixed portrait/landscape PDFs
+- Full-screen mode
+
+### Tech Stack
+
+- **Frontend:** React + Vite
+- **PDF Rendering:** react-pdf + pdf.js
+- **Flipbook:** react-pageflip
+- **Storage:** Vercel Blob
+- **Styling:** Tailwind CSS
+- **Deployment:** Vercel
+
+---
 
 ## React Compiler
 

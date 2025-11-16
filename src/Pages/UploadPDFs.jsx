@@ -2,123 +2,169 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import pdfLibraryBase from '../assets/pdfs';
 import { useNavigate } from 'react-router-dom';
 
-const STORAGE_KEY = 'pdfLibraryExtras';
-
-function readExtras() {
-	try {
-		const raw = localStorage.getItem(STORAGE_KEY);
-		const arr = raw ? JSON.parse(raw) : [];
-		return Array.isArray(arr) ? arr : [];
-	} catch {
-		return [];
-	}
-}
-
-function writeExtras(extras) {
-	try {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(extras ?? []));
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-function slugify(text) {
-		return (text || '')
-			.toString()
-			.trim()
-			.toLowerCase()
-			.replace(/\s+/g, '-')
-			.replace(/[^a-z0-9-]/g, '')
-			.replace(/-+/g, '-')
-			.replace(/^-+|-+$/g, '');
+// Helper to get auth header
+function getAuthHeader() {
+	const user = import.meta.env.VITE_BASIC_AUTH_USER || 'admin';
+	const pass = import.meta.env.VITE_BASIC_AUTH_PASS || 'admin';
+	return `Basic ${btoa(`${user}:${pass}`)}`;
 }
 
 export default function UploadPDFs() {
 	const navigate = useNavigate();
-	const [extras, setExtras] = useState(() => readExtras());
+	const [extras, setExtras] = useState([]);
 	const [title, setTitle] = useState('');
 	const [file, setFile] = useState('');
-	const [editingId, setEditingId] = useState(null);
+	const [selectedFile, setSelectedFile] = useState(null);
 	const [message, setMessage] = useState('');
-		const fileInputRef = useRef(null);
+	const [loading, setLoading] = useState(false);
+	const fileInputRef = useRef(null);
 
+	// Fetch PDFs from API on mount
 	useEffect(() => {
-		setExtras(readExtras());
+		fetchPDFs();
 	}, []);
+
+	const fetchPDFs = async () => {
+		try {
+			const response = await fetch('/api/list');
+			const data = await response.json();
+			if (data.success) {
+				setExtras(data.data || []);
+			}
+		} catch (error) {
+			console.error('Failed to fetch PDFs:', error);
+		}
+	};
 
 	const combined = useMemo(() => {
 		return [...pdfLibraryBase, ...extras];
 	}, [extras]);
 
-	const handleSave = (e) => {
+	const handleSave = async (e) => {
 		e.preventDefault();
-		const id = editingId || slugify(title) || `pdf-${Date.now()}`;
-		if (!title || !file) {
-			setMessage('Please provide both title and file URL.');
+		if (!title) {
+			setMessage('Please provide a title.');
 			return;
 		}
-		const next = [...extras];
-		const idx = next.findIndex((x) => x.id === id);
-		const entry = { id, title, file };
-		if (idx >= 0) next[idx] = entry;
-		else next.push(entry);
-		setExtras(next);
-		writeExtras(next);
-		setMessage('Saved. You may need to refresh FlipBook for changes to show.');
-		setEditingId(null);
-		setTitle('');
-		setFile('');
+		
+		// If we have a selected file (from file input), upload it
+		if (selectedFile) {
+			setLoading(true);
+			setMessage('Uploading PDF to Vercel Blob...');
+			
+			try {
+				const formData = new FormData();
+				formData.append('file', selectedFile);
+				formData.append('title', title);
+
+				const response = await fetch('/api/upload', {
+					method: 'POST',
+					headers: {
+						'Authorization': getAuthHeader(),
+					},
+					body: formData,
+				});
+
+				const data = await response.json();
+				
+				if (data.success) {
+					setMessage('PDF uploaded successfully!');
+					await fetchPDFs(); // Refresh list
+					setTitle('');
+					setFile('');
+					setSelectedFile(null);
+				} else {
+					setMessage(`Upload failed: ${data.error || 'Unknown error'}`);
+				}
+			} catch (error) {
+				setMessage(`Upload error: ${error.message}`);
+			} finally {
+				setLoading(false);
+			}
+		} else if (file) {
+			setMessage('Please use the Upload file button to select a PDF file.');
+		} else {
+			setMessage('Please select a file to upload.');
+		}
 	};
 
-		const handleFileSelect = (e) => {
-			const f = e?.target?.files?.[0];
-			if (!f) return;
-			if (f.type !== 'application/pdf') {
-				setMessage('Only PDF files are supported.');
-				return;
-			}
-			// Warn for large files
-			if (f.size > 5 * 1024 * 1024) {
-				setMessage('Warning: files larger than 5MB may not persist well in localStorage.');
+	const handleFileSelect = (e) => {
+		const f = e?.target?.files?.[0];
+		if (!f) return;
+		if (f.type !== 'application/pdf') {
+			setMessage('Only PDF files are supported.');
+			return;
+		}
+		// Store the actual file for upload
+		setSelectedFile(f);
+		// Show filename in the input
+		setFile(f.name);
+		// Auto-fill title from filename if empty
+		setTitle((t) => t || f.name.replace(/\.pdf$/i, ''));
+		setMessage(`File selected: ${f.name}. Click Add to upload.`);
+		// Reset input so same file can be reselected later
+		e.target.value = null;
+	};
+
+	const handleEdit = () => {
+		setMessage('Editing is not supported for uploaded PDFs. Please delete and re-upload if needed.');
+	};
+
+	const handleDelete = async (id) => {
+		if (!confirm(`Delete PDF "${id}"?`)) return;
+		
+		setLoading(true);
+		setMessage('Deleting...');
+		
+		try {
+			const response = await fetch(`/api/delete?id=${encodeURIComponent(id)}`, {
+				method: 'DELETE',
+				headers: {
+					'Authorization': getAuthHeader(),
+				},
+			});
+
+			const data = await response.json();
+			
+			if (data.success) {
+				setMessage('PDF deleted successfully!');
+				await fetchPDFs(); // Refresh list
 			} else {
-				setMessage('Reading file...');
+				setMessage(`Delete failed: ${data.error || 'Unknown error'}`);
 			}
-			const reader = new FileReader();
-			reader.onload = () => {
-				const dataUrl = reader.result;
-				// Use the data URL as the file reference so the viewer can load it
-				setFile(dataUrl);
-				// default title from filename if empty
-				setTitle((t) => t || f.name.replace(/\.pdf$/i, ''));
-				setMessage('File loaded. Click Add/Update to save to library.');
-			};
-			reader.onerror = () => setMessage('Failed to read file.');
-			reader.readAsDataURL(f);
-			// Reset input so same file can be reselected later
-			e.target.value = null;
-		};
-
-	const handleEdit = (item) => {
-		setEditingId(item.id);
-		setTitle(item.title);
-		setFile(item.file);
-		setMessage('Editing existing entry.');
+		} catch (error) {
+			setMessage(`Delete error: ${error.message}`);
+		} finally {
+			setLoading(false);
+		}
 	};
 
-	const handleDelete = (id) => {
-		const next = extras.filter((x) => x.id !== id);
-		setExtras(next);
-		writeExtras(next);
-	};
-
-	const handleReset = () => {
-		writeExtras([]);
-		setExtras([]);
-		setTitle('');
-		setFile('');
-		setEditingId(null);
-		setMessage('Custom library cleared.');
+	const handleReset = async () => {
+		if (!confirm('Delete all custom PDFs from Vercel Blob?')) return;
+		
+		setLoading(true);
+		setMessage('Deleting all custom PDFs...');
+		
+		// Delete each custom PDF one by one
+		try {
+			for (const item of extras) {
+				await fetch(`/api/delete?id=${encodeURIComponent(item.id)}`, {
+					method: 'DELETE',
+					headers: {
+						'Authorization': getAuthHeader(),
+					},
+				});
+			}
+			setMessage('All custom PDFs cleared.');
+			await fetchPDFs();
+			setTitle('');
+			setFile('');
+			setSelectedFile(null);
+		} catch (error) {
+			setMessage(`Clear error: ${error.message}`);
+		} finally {
+			setLoading(false);
+		}
 	};
 
 	const goHome = () => navigate('/');
@@ -136,7 +182,7 @@ export default function UploadPDFs() {
 
 				<div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 					<section className="rounded-xl border border-gray-800 bg-gray-850/50 bg-gray-800 p-5">
-						<h2 className="text-lg font-medium mb-3">Add or update entry</h2>
+						<h2 className="text-lg font-medium mb-3">Upload new PDF</h2>
 									<form onSubmit={handleSave} className="space-y-3">
 										<input
 											ref={fileInputRef}
@@ -156,38 +202,53 @@ export default function UploadPDFs() {
 									required
 								/>
 							</div>
-											<div>
-												<label className="block text-sm mb-1">File URL</label>
-												<div className="flex gap-2">
-													<input
-														type="text"
-														value={file}
-														onChange={(e) => setFile(e.target.value)}
-														className="flex-1 rounded-md bg-gray-900 border border-gray-700 px-3 py-2"
-														placeholder="/my.pdf or https://..."
-														required
-													/>
-													<button
-														type="button"
-														onClick={() => fileInputRef.current?.click()}
-														className="rounded-md bg-indigo-600 hover:bg-indigo-500 px-3 py-2 text-sm"
-													>
-														Upload file
-													</button>
-												</div>
-												<p className="text-xs text-gray-400 mt-1">Tip: Place PDFs in <code className="font-mono">public/</code> and reference like <code className="font-mono">/my.pdf</code>, use a full URL, or upload a local PDF.</p>
-												{file && file.startsWith && file.startsWith('data:') ? (
-													<p className="text-xs text-emerald-200 mt-2">Local file loaded — <a className="underline" href={file} target="_blank" rel="noreferrer">open</a></p>
-												) : null}
-											</div>
+							<div>
+								<label className="block text-sm mb-1">PDF File</label>
+								<div className="flex gap-2">
+									<input
+										type="text"
+										value={file}
+										readOnly
+										className="flex-1 rounded-md bg-gray-900 border border-gray-700 px-3 py-2 text-gray-400"
+										placeholder="No file selected"
+									/>
+									<button
+										type="button"
+										onClick={() => fileInputRef.current?.click()}
+										className="rounded-md bg-indigo-600 hover:bg-indigo-500 px-3 py-2 text-sm whitespace-nowrap"
+										disabled={loading}
+									>
+										Choose file
+									</button>
+								</div>
+								<p className="text-xs text-gray-400 mt-1">Select a PDF file to upload to Vercel Blob storage.</p>
+							</div>
 							<div className="flex items-center gap-2 pt-1">
-								<button type="submit" className="rounded-md bg-green-600 hover:bg-green-500 px-3 py-2 text-sm">
-									{editingId ? 'Update' : 'Add'}
+								<button 
+									type="submit" 
+									className="rounded-md bg-green-600 hover:bg-green-500 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+									disabled={loading || !selectedFile}
+								>
+									{loading ? 'Uploading...' : 'Upload PDF'}
 								</button>
-								{editingId && (
-									<button type="button" onClick={() => { setEditingId(null); setTitle(''); setFile(''); setMessage(''); }} className="rounded-md bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm">Cancel</button>
+								{(title || file) && (
+									<button 
+										type="button" 
+										onClick={() => { setTitle(''); setFile(''); setSelectedFile(null); setMessage(''); }} 
+										className="rounded-md bg-gray-700 hover:bg-gray-600 px-3 py-2 text-sm"
+										disabled={loading}
+									>
+										Clear
+									</button>
 								)}
-								<button type="button" onClick={handleReset} className="ml-auto rounded-md bg-red-600/80 hover:bg-red-600 px-3 py-2 text-sm">Clear custom library</button>
+								<button 
+									type="button" 
+									onClick={handleReset} 
+									className="ml-auto rounded-md bg-red-600/80 hover:bg-red-600 px-3 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+									disabled={loading || extras.length === 0}
+								>
+									Delete all
+								</button>
 							</div>
 							{message && <p className="text-sm text-emerald-300">{message}</p>}
 						</form>
@@ -225,7 +286,7 @@ export default function UploadPDFs() {
 				</div>
 
 				<div className="mt-6 text-xs text-gray-400">
-					<p>Note: The viewer reads a snapshot of the library on load. After saving, use "Refresh app" to see changes in the FlipBook.</p>
+					<p>Note: PDFs are stored in Vercel Blob storage. After uploading, use "Refresh app" to see changes in the FlipBook viewer.</p>
 				</div>
 			</div>
 		</div>

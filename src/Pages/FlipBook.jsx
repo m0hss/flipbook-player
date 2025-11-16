@@ -18,7 +18,7 @@ import screenfull from "screenfull";
 import "./styles.css";
 import useScreenSize from "../hooks/useScreenSize";
 import LeftLibrary from "../Components/LeftLibrary";
-import pdfLibrary from "../assets/pdfs";
+import { getPdfLibrary } from "../assets/pdfs";
 
 // Point pdf.js to the correct worker script URL produced by Vite.
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
@@ -95,9 +95,8 @@ function FlipBook() {
   const [dimensions, setDimensions] = useState({ width: 500, height: 700 });
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [pdfDocument, setPdfDocument] = useState(null);
-  const [currentFile, setCurrentFile] = useState(
-    pdfLibrary?.[0]?.file || "/Certif02.pdf"
-  );
+  const [pdfLibrary, setPdfLibrary] = useState([]);
+  const [currentFile, setCurrentFile] = useState("/Certif02.pdf");
   const [zoomLevel, setZoomLevel] = useState(1);
   // Pan state for dragging when zoomed in
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -121,6 +120,24 @@ function FlipBook() {
   const containerRef = useRef(null);
   const { width: screenWidth, height: screenHeight } = useScreenSize();
   const isMobile = screenWidth < 940; // tailwind 'sm' breakpoint
+
+  // Fetch PDF library on mount
+  useEffect(() => {
+    let mounted = true;
+    getPdfLibrary().then((library) => {
+      if (mounted) {
+        setPdfLibrary(library);
+        // Set initial file from library if available
+        if (library.length > 0 && !currentFile) {
+          setCurrentFile(library[0].file);
+        }
+      }
+    }).catch((error) => {
+      console.error('Failed to load PDF library:', error);
+    });
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen to fullscreen state
   useEffect(() => {
