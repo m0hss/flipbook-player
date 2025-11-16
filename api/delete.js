@@ -1,61 +1,29 @@
 import { del, list } from '@vercel/blob';
 
-export const config = {
-  runtime: 'edge',
-};
+export const config = { runtime: 'nodejs' };
 
-export default async function handler(request) {
+export default async function handler(req, res) {
   try {
-    if (request.method !== 'DELETE') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (req.method !== 'DELETE') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
-
-    // Check basic auth
-    const authHeader = request.headers.get('authorization');
-    // eslint-disable-next-line no-undef
+    const authHeader = req.headers.authorization || '';
     const expectedUser = process.env.BASIC_AUTH_USER || 'admin';
-    // eslint-disable-next-line no-undef
     const expectedPass = process.env.BASIC_AUTH_PASS || 'admin';
-    const expectedToken = `Basic ${btoa(`${expectedUser}:${expectedPass}`)}`;
-    
-    if (authHeader !== expectedToken) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    const expected = 'Basic ' + Buffer.from(`${expectedUser}:${expectedPass}`).toString('base64');
+    if (authHeader !== expected) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-
-    const url = new URL(request.url);
-    const id = url.searchParams.get('id');
-
+    const id = req.query?.id || new URL(req.url, 'http://localhost').searchParams.get('id');
     if (!id) {
-      return new Response(JSON.stringify({ error: 'Missing id parameter' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Missing id parameter' });
     }
-
-    // List all blobs and find ones matching the id
     const { blobs } = await list();
-    const toDelete = blobs.filter(blob => 
-      blob.pathname.includes(id) || blob.pathname.includes(`metadata/${id}`)
-    );
-
-    // Delete all matching blobs
-    await Promise.all(toDelete.map(blob => del(blob.url)));
-
-    return new Response(JSON.stringify({ success: true, deleted: toDelete.length }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const toDelete = blobs.filter(b => b.pathname.includes(id) || b.pathname.includes(`metadata/${id}`));
+    await Promise.all(toDelete.map(b => del(b.url)));
+    return res.status(200).json({ success: true, deleted: toDelete.length });
   } catch (error) {
     console.error('Delete error:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Delete failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Delete failed' });
   }
 }

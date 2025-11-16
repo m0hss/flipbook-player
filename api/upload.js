@@ -1,78 +1,53 @@
 import { put } from '@vercel/blob';
 
-export const config = {
-  runtime: 'edge',
-};
+export const config = { runtime: 'nodejs' };
 
-export default async function handler(request) {
+function unauthorized(res) {
+  res.status(401).json({ error: 'Unauthorized' });
+}
+
+export default async function handler(req, res) {
   try {
-    // Only allow POST
-    if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Check basic auth (using TextEncoder for edge runtime)
-    const authHeader = request.headers.get('authorization');
-    
-    // Read from environment (Vercel Edge uses different env var names)
-    // eslint-disable-next-line no-undef
+    // Basic Auth verification
+    const authHeader = req.headers.authorization || '';
     const expectedUser = process.env.BASIC_AUTH_USER || 'admin';
-    // eslint-disable-next-line no-undef
     const expectedPass = process.env.BASIC_AUTH_PASS || 'admin';
-    
-    // Use btoa for base64 encoding in edge runtime
-    const expectedToken = `Basic ${btoa(`${expectedUser}:${expectedPass}`)}`;
-    
-    if (authHeader !== expectedToken) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    const expected = 'Basic ' + Buffer.from(`${expectedUser}:${expectedPass}`).toString('base64');
+    if (authHeader !== expected) {
+      return unauthorized(res);
     }
 
-    const formData = await request.formData();
+    // Parse multipart form data
+    const formData = await req.formData?.();
+    // If edge-style formData is not available (nodejs runtime), fall back to busboy-like error
+    if (!formData) {
+      return res.status(400).json({ error: 'formData API not available. Use fetch with FormData from client.' });
+    }
     const file = formData.get('file');
     const title = formData.get('title');
-
     if (!file || !title) {
-      return new Response(JSON.stringify({ error: 'Missing file or title' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Missing file or title' });
     }
 
-    // Upload to Vercel Blob
-    const blob = await put(`pdfs/${Date.now()}-${file.name}`, file, {
+    const safeName = file.name?.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'upload.pdf';
+    const blob = await put(`pdfs/${Date.now()}-${safeName}`, file, {
       access: 'public',
       addRandomSuffix: true,
     });
 
-    // Store metadata in Vercel Blob as well (simple JSON file)
-    const metadataKey = `metadata/${blob.pathname.replace('pdfs/', '').replace('.pdf', '')}.json`;
-    const metadata = {
-      id: blob.pathname.replace('pdfs/', '').replace('.pdf', ''),
-      title,
-      file: blob.url,
-      uploadedAt: new Date().toISOString(),
-    };
-
-    await put(metadataKey, JSON.stringify(metadata), {
+    const id = blob.pathname.replace(/^pdfs\//, '').replace(/\.pdf$/i, '');
+    const metadata = { id, title, file: blob.url, uploadedAt: new Date().toISOString() };
+    await put(`metadata/${id}.json`, JSON.stringify(metadata), {
       access: 'public',
       contentType: 'application/json',
     });
-
-    return new Response(JSON.stringify({ success: true, data: metadata }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(200).json({ success: true, data: metadata });
   } catch (error) {
     console.error('Upload error:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Upload failed' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Upload failed' });
   }
 }

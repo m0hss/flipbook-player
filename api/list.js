@@ -1,49 +1,27 @@
 import { list } from '@vercel/blob';
 
-export const config = {
-  runtime: 'edge',
-};
+export const config = { runtime: 'nodejs' };
 
-export default async function handler(request) {
+export default async function handler(req, res) {
   try {
-    if (request.method !== 'GET') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (req.method !== 'GET') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
-
-    // List all metadata files
     const { blobs } = await list({ prefix: 'metadata/' });
-
-    // Fetch each metadata file content
     const pdfs = await Promise.all(
       blobs.map(async (blob) => {
         try {
-          const response = await fetch(blob.url);
-          const data = await response.json();
-          return data;
+          const r = await fetch(blob.url);
+          return await r.json();
         } catch {
           return null;
         }
       })
     );
-
-    // Filter out nulls and return
-    const validPdfs = pdfs.filter(Boolean);
-
-    return new Response(JSON.stringify({ success: true, data: validPdfs }), {
-      status: 200,
-      headers: { 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-      },
-    });
+    const valid = pdfs.filter(Boolean).sort((a,b)=> new Date(b.uploadedAt||0)-new Date(a.uploadedAt||0));
+    return res.status(200).setHeader?.('Cache-Control','no-cache, no-store, must-revalidate').json({ success: true, data: valid });
   } catch (error) {
     console.error('List error:', error);
-    return new Response(JSON.stringify({ error: error.message || 'Failed to list PDFs' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: error.message || 'Failed to list PDFs' });
   }
 }
