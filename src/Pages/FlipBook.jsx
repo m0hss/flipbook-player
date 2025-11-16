@@ -128,10 +128,16 @@ function FlipBook() {
     setIsLoadingLibrary(true);
     getPdfLibrary().then((library) => {
       if (mounted) {
-        setPdfLibrary(library);
+        // Sort library by uploadedAt date - oldest first (ascending order)
+        const sortedLibrary = [...library].sort((a, b) => {
+          const dateA = new Date(a.uploadedAt || 0);
+          const dateB = new Date(b.uploadedAt || 0);
+          return dateA - dateB; // oldest first
+        });
+        setPdfLibrary(sortedLibrary);
         // Set initial file from library if available
-        if (library.length > 0 && !currentFile) {
-          setCurrentFile(library[0].file);
+        if (sortedLibrary.length > 0 && !currentFile) {
+          setCurrentFile(sortedLibrary[0].file);
         }
         setIsLoadingLibrary(false);
       }

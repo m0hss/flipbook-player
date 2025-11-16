@@ -36,7 +36,12 @@ export default function UploadPDFs() {
   };
 
   const combined = useMemo(() => {
-    return [...extras];
+    // Sort by uploadedAt date - oldest first (ascending order)
+    return [...extras].sort((a, b) => {
+      const dateA = new Date(a.uploadedAt || 0);
+      const dateB = new Date(b.uploadedAt || 0);
+      return dateA - dateB; // oldest first
+    });
   }, [extras]);
 
   const handleSave = async (e) => {
