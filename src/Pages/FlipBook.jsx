@@ -198,7 +198,7 @@ function FlipBook() {
       // Large screens (1024px - 1535px): optimize for common desktop resolutions
       // For spread view, calculate per-page width from usable width
       const perPageWidth = Math.min(Math.floor((usableWidth / 2) * 1.1), 550);
-      const landscapeWidth = Math.max(400, perPageWidth);
+      const landscapeWidth = Math.max(390, perPageWidth);
       const landscapeHeight = Math.min(
         Math.round((landscapeWidth * 716) / 1024), 
         usableHeight
