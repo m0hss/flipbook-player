@@ -1,65 +1,73 @@
-import { put } from "@vercel/blob";
+/* eslint-env node */
+import { put } from '@vercel/blob';
+import { IncomingForm } from 'formidable';
+import { readFile } from 'fs/promises';
 
-// Use edge runtime so we can access request.formData()
-export const config = { runtime: "edge" };
+export const config = {
+  api: {
+    bodyParser: false, // Disable default body parser
+  },
+};
 
-export default async function handler(request) {
+export default async function handler(req, res) {
   try {
-    if (request.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), {
-        status: 405,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Basic auth (edge still exposes process.env values at build/deploy time)
-    const authHeader = request.headers.get("authorization") || "";
-    const expectedUser = process.env.BASIC_AUTH_USER || "admin";
-    const expectedPass = process.env.BASIC_AUTH_PASS || "admin";
-    const expectedToken = "Basic " + btoa(`${expectedUser}:${expectedPass}`);
-    if (authHeader !== expectedToken) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      });
+    // Basic auth
+    const authHeader = req.headers.authorization || '';
+    const expectedUser = process.env.BASIC_AUTH_USER || 'admin';
+    const expectedPass = process.env.BASIC_AUTH_PASS || 'admin';
+    const expected = 'Basic ' + Buffer.from(`${expectedUser}:${expectedPass}`).toString('base64');
+    if (authHeader !== expected) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const formData = await request.formData();
-    const file = formData.get("file");
-    const title = formData.get("title");
-    if (!file || !title) {
-      return new Response(JSON.stringify({ error: "Missing file or title" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
+    // Parse multipart form data
+    const form = new IncomingForm();
+    const [fields, files] = await new Promise((resolve, reject) => {
+      form.parse(req, (err, fields, files) => {
+        if (err) reject(err);
+        else resolve([fields, files]);
       });
+    });
+
+    const file = files.file?.[0] || files.file;
+    const title = fields.title?.[0] || fields.title || 'Untitled';
+
+    if (!file) {
+      return res.status(400).json({ error: 'Missing file' });
     }
 
-    const originalName = file.name || "upload.pdf";
-    const safeName = originalName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const blob = await put(`pdfs/${Date.now()}-${safeName}`, file, {
-      access: "public",
+    // Read file buffer
+    const fileBuffer = await readFile(file.filepath);
+    const originalName = file.originalFilename || 'upload.pdf';
+    const safeName = originalName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+
+    // Upload to Vercel Blob
+    const blob = await put(`pdfs/${Date.now()}-${safeName}`, fileBuffer, {
+      access: 'public',
       addRandomSuffix: true,
     });
-    const id = blob.pathname.replace(/^pdfs\//, "").replace(/\.pdf$/i, "");
+
+    const id = blob.pathname.replace(/^pdfs\//, '').replace(/\.pdf$/i, '');
     const metadata = {
       id,
       title,
       file: blob.url,
       uploadedAt: new Date().toISOString(),
     };
+
+    // Save metadata
     await put(`metadata/${id}.json`, JSON.stringify(metadata), {
-      access: "public",
-      contentType: "application/json",
+      access: 'public',
+      contentType: 'application/json',
     });
-    return new Response(JSON.stringify({ success: true, data: metadata }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+
+    return res.status(200).json({ success: true, data: metadata });
   } catch (error) {
-    console.error("Upload error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Upload failed" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    console.error('Upload error:', error);
+    return res.status(500).json({ error: error.message || 'Upload failed' });
   }
 }

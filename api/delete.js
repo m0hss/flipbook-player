@@ -1,6 +1,5 @@
-import { del, list } from "@vercel/blob";
-
-export const config = { runtime: "nodejs" };
+/* eslint-env node */
+import { del, list } from '@vercel/blob';
 
 export default async function handler(req, res) {
   try {
