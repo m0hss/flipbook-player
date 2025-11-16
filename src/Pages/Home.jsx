@@ -6,6 +6,7 @@ import AboutMe from './AboutMe';
 import FlipBook from './FlipBook';
 import ProtectedRoute from './ProtectedRoute';
 import UploadPDFs from './UploadPDFs';
+import NotFound from './404';
 
 const Home = () => {
   return (
@@ -14,7 +15,7 @@ const Home = () => {
       <Routes>
         <Route path='/' element={<FlipBook />} />
         <Route path='/contact' element={<ContactUs />} />
-        <Route path='/about-me' element={<AboutMe />} />
+        <Route path='/aboutme' element={<AboutMe />} />
         <Route
           path='/upload'
           element={
@@ -23,7 +24,7 @@ const Home = () => {
             </ProtectedRoute>
           }
         />
-        <Route path='*' element={<FlipBook />} />
+  <Route path='*' element={<NotFound />} />
       </Routes>
     </div>
   );
