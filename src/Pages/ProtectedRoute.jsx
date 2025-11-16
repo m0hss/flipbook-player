@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 // Simple Basic Auth guard for client-side routes
@@ -10,15 +10,8 @@ export default function ProtectedRoute({ children }) {
 	const navigate = useNavigate();
 	const location = useLocation();
 
-	const configuredUser = import.meta.env.VITE_BASIC_AUTH_USER || '';
-	const configuredPass = import.meta.env.VITE_BASIC_AUTH_PASS || '';
-
-	// Allow a development fallback if no env vars provided
-	const fallbackUser = 'admin';
-	const fallbackPass = 'admin321';
-
-	const activeUser = configuredUser || fallbackUser;
-	const activePass = configuredPass || fallbackPass;
+	const activeUser = import.meta.env.VITE_BASIC_AUTH_USER || 'admin';
+	const activePass = import.meta.env.VITE_BASIC_AUTH_PASS || 'admin';
 
 	const expectedToken = useMemo(() => {
 		try {
@@ -104,9 +97,6 @@ export default function ProtectedRoute({ children }) {
 								Cancel
 							</button>
 						</div>
-						{!configuredUser || !configuredPass ? (
-							<p className="text-xs text-gray-400 pt-1">Tip: No env credentials set. Using fallback admin/admin for development.</p>
-						) : null}
 					</form>
 				</div>
 			</div>

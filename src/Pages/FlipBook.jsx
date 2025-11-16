@@ -96,7 +96,7 @@ function FlipBook() {
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [pdfDocument, setPdfDocument] = useState(null);
   const [pdfLibrary, setPdfLibrary] = useState([]);
-  const [currentFile, setCurrentFile] = useState("/Certif02.pdf");
+  const [currentFile, setCurrentFile] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   // Pan state for dragging when zoomed in
   const [pan, setPan] = useState({ x: 0, y: 0 });
