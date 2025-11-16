@@ -1,53 +1,65 @@
-import { put } from '@vercel/blob';
+import { put } from "@vercel/blob";
 
-export const config = { runtime: 'nodejs' };
+// Use edge runtime so we can access request.formData()
+export const config = { runtime: "edge" };
 
-function unauthorized(res) {
-  res.status(401).json({ error: 'Unauthorized' });
-}
-
-export default async function handler(req, res) {
+export default async function handler(request) {
   try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method not allowed' });
+    if (request.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Basic Auth verification
-    const authHeader = req.headers.authorization || '';
-    const expectedUser = process.env.BASIC_AUTH_USER || 'admin';
-    const expectedPass = process.env.BASIC_AUTH_PASS || 'admin';
-    const expected = 'Basic ' + Buffer.from(`${expectedUser}:${expectedPass}`).toString('base64');
-    if (authHeader !== expected) {
-      return unauthorized(res);
+    // Basic auth (edge still exposes process.env values at build/deploy time)
+    const authHeader = request.headers.get("authorization") || "";
+    const expectedUser = process.env.BASIC_AUTH_USER || "admin";
+    const expectedPass = process.env.BASIC_AUTH_PASS || "admin";
+    const expectedToken = "Basic " + btoa(`${expectedUser}:${expectedPass}`);
+    if (authHeader !== expectedToken) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // Parse multipart form data
-    const formData = await req.formData?.();
-    // If edge-style formData is not available (nodejs runtime), fall back to busboy-like error
-    if (!formData) {
-      return res.status(400).json({ error: 'formData API not available. Use fetch with FormData from client.' });
-    }
-    const file = formData.get('file');
-    const title = formData.get('title');
+    const formData = await request.formData();
+    const file = formData.get("file");
+    const title = formData.get("title");
     if (!file || !title) {
-      return res.status(400).json({ error: 'Missing file or title' });
+      return new Response(JSON.stringify({ error: "Missing file or title" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    const safeName = file.name?.replace(/[^a-zA-Z0-9_.-]/g, '_') || 'upload.pdf';
+    const originalName = file.name || "upload.pdf";
+    const safeName = originalName.replace(/[^a-zA-Z0-9_.-]/g, "_");
     const blob = await put(`pdfs/${Date.now()}-${safeName}`, file, {
-      access: 'public',
+      access: "public",
       addRandomSuffix: true,
     });
-
-    const id = blob.pathname.replace(/^pdfs\//, '').replace(/\.pdf$/i, '');
-    const metadata = { id, title, file: blob.url, uploadedAt: new Date().toISOString() };
+    const id = blob.pathname.replace(/^pdfs\//, "").replace(/\.pdf$/i, "");
+    const metadata = {
+      id,
+      title,
+      file: blob.url,
+      uploadedAt: new Date().toISOString(),
+    };
     await put(`metadata/${id}.json`, JSON.stringify(metadata), {
-      access: 'public',
-      contentType: 'application/json',
+      access: "public",
+      contentType: "application/json",
     });
-    return res.status(200).json({ success: true, data: metadata });
+    return new Response(JSON.stringify({ success: true, data: metadata }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({ error: error.message || 'Upload failed' });
+    console.error("Upload error:", error);
+    return new Response(
+      JSON.stringify({ error: error.message || "Upload failed" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
   }
 }
